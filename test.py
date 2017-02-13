@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import collections
 import math
-
+from tensorflow.python.ops import variable_scope
 
 def import_data(path):
 
@@ -74,53 +74,82 @@ def build_dictionary(sentences, vocab=None, max_sent_len_=None):
 	sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
 	reverse_dictionary = dict(zip(vocab.values(), vocab.keys()))
 	
-	enc_sentences = enc_sentences[:,:5]
-	dec_go_sentences = dec_go_sentences[:,:5]
-	dec_end_sentences = dec_end_sentences[:,:5]
-	max_sent_len = 4
+	# enc_sentences = enc_sentences[:,:5]
+	# dec_go_sentences = dec_go_sentences[:,:5]
+	# dec_end_sentences = dec_end_sentences[:,:5]
+	# max_sent_len = 4
 
 	return vocab, reverse_dictionary, sentence_lengths, max_sent_len+1, enc_sentences, dec_go_sentences, dec_end_sentences
 
 def loop_function(a, b):
 
+	a_unpacked = [tf.reshape(tensor, [1, _embedding_size]) for tensor in tf.unpack(a, axis=0)]
+	logits_projected = []
+	for logit in a_unpacked:
+		logit_projected = tf.contrib.layers.linear(logit, _vocabulary_size) 
+		this_max = tf.argmax(logit_projected, 1)
+		logits_projected.append(this_max)
+	
+	a = tf.pack(logits_projected)
+	a = tf.nn.embedding_lookup(word_embeddings, a)
+	a = tf.reshape(a, [_num_test, _embedding_size])
+
 	return a
+
+# def rnn_decoder_rob(decoder_inputs, initial_state, cell, loop_function=None,
+#                 scope=None):
+# 	REUSE=None
+# 	with variable_scope.variable_scope(scope or "decoder"):
+# 		state = initial_state
+# 		outputs = []
+# 		prev = None
+# 		for i, inp in enumerate(decoder_inputs):
+# 			if loop_function is not None and prev is not None:
+# 				with variable_scope.variable_scope("embeddings", reuse=REUSE):
+# 					inp = loop_function(prev, i)
+# 			if i > 0:
+# 				variable_scope.get_variable_scope().reuse_variables()
+# 				REUSE = True
+# 			output, state = cell(inp, state)
+# 			outputs.append(output)
+# 			if loop_function is not None:
+# 				prev = output
+# 	return outputs, state
 
 if __name__ == '__main__':
 
+	tf.reset_default_graph()
 	_embedding_size = 200
 	_hidden_size = 200
 	_num_steps = 20000
 	_hidden_layers = 3
-	_batch_size = 50
+	_batch_size = 10
 	_keep_prob_dropout = 1.0
 	_file_path = 'gingerbread.txt'
 	_corpus = import_data(_file_path)
 	_dictionary, _reverse_dictionary, _sentence_lengths, _max_sent_len, _enc_inputs, _dec_inputs, _dec_labels = build_dictionary(_corpus)
 	_vocabulary_size = len(_dictionary)
 	_num_test = 3
-	learning_rate = 0.003
+	learning_rate = 0.001
 
 	# Temporary: align enoder and decoder inputs
 	_enc_inputs = _enc_inputs[1:-1]
 	_dec_inputs = _dec_inputs[2:]
 	_dec_labels = _dec_labels[2:]
 
-	tf.reset_default_graph()
-
 	# Placeholders
 	sentences = tf.placeholder(tf.int64, [None, None], "sentences") # [batch_size, max_sent_length]
 	sentences_lengths = tf.placeholder(tf.int64, [None], "sentences_lengths")
 	dec_inputs = tf.placeholder(tf.int64, [None, None], "dec_inputs")
-	dec_labels = tf.placeholder(tf.int64, [None, None], "dec_labels")
+	dec_labels = tf.placeholder(tf.int64, [None, _max_sent_len], "dec_labels")
 	gold = tf.placeholder(tf.int32, [None, 3], "gold") # [batch_size * 3] contains triplets corresponding to batch number, number of word in sequence and index in vocab
 
 	# Variables
-	word_embeddings = tf.Variable(tf.random_uniform([_vocabulary_size, _embedding_size], -1.0, 1.0))
+	word_embeddings = tf.get_variable('embeddings', [_vocabulary_size, _embedding_size], tf.float32, initializer=tf.random_normal_initializer())
 
 	# Embedded sentences
 	sentences_embedded = tf.nn.embedding_lookup(word_embeddings, sentences) # [batch_size, max_sent_length, embedding_size]
 	dec_inputs_embedded = tf.nn.embedding_lookup(word_embeddings, dec_inputs) # [batch_size, max_sent_length, embedding_size]
-	dec_labels_embedded = tf.nn.embedding_lookup(word_embeddings, dec_labels)
 
 
     #-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  
@@ -141,7 +170,6 @@ if __name__ == '__main__':
 
 	dec_cell = tf.nn.rnn_cell.GRUCell(_embedding_size)
 
-	# Prediction time
 	# Decoder needs lists as input
 	dec_inputs_list = [tf.reshape(x,[_batch_size, _embedding_size]) for x in tf.split(1,_max_sent_len, dec_inputs_embedded)]
 
@@ -154,24 +182,30 @@ if __name__ == '__main__':
 	logits_projected = []
 	with tf.variable_scope("decoder/loop_function") as varscope:
 		for logit in logits:
-			logit_projected = tf.contrib.layers.linear(logit, _vocabulary_size)
+			logit_projected = tf.contrib.layers.linear(logit, _vocabulary_size) 
 			logits_projected.append(logit_projected)
 	
-	probabilities = tf.nn.softmax(logits_projected)
-	probabilities_gold = tf.gather_nd(probabilities, gold)
+
+	probabilities = tf.nn.softmax(logits_projected) # [batch_size, max_sent_length, vocab]
+	probabilities_gold = tf.gather_nd(probabilities, gold) # [batch_size * max_sent_length]
+
+
 	log_probabilities_gold = tf.log(probabilities_gold)
 	loss = -tf.reduce_sum(log_probabilities_gold)
+	opt_op = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
 
-	optimizer = tf.train.AdamOptimizer(learning_rate)
-	gvs = optimizer.compute_gradients(loss)
-	grad_norms = [tf.nn.l2_loss(g) for g, v in gvs]
-	grad_norm = tf.add_n(grad_norms)
-	capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in gvs]
-	opt_op = optimizer.apply_gradients(capped_gvs)
+
+	# optimizer = tf.train.AdamOptimizer(learning_rate)
+	# gvs = optimizer.compute_gradients(loss)
+	# grad_norms = [tf.nn.l2_loss(g) for g, v in gvs]
+	# grad_norm = tf.add_n(grad_norms)
+	# capped_gvs = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in gvs]
+	# opt_op = optimizer.apply_gradients(capped_gvs)
 
 	#-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  
     #-  -  -  -  -  -  -  -  -  -  -  -  D E C O D E R  -  T E S T I N G  -  -  -  -  -  -  -  -  -  -  -  -  -
+
 
 	pred_inputs_list = [tf.reshape(x,[_num_test, _embedding_size]) for x in tf.split(1,_max_sent_len, dec_inputs_embedded)]
 
@@ -209,7 +243,6 @@ if __name__ == '__main__':
 			batch_dec_labels = np.array(_dec_labels)[perm]
 
 			batch_labels = []
-
 			for row in range(_batch_size):
 				for column in range(_max_sent_len):
 					batch_labels.append([row, column,batch_dec_labels[row, column]]) 
@@ -222,7 +255,7 @@ if __name__ == '__main__':
 							dec_inputs: batch_dec_inputs,
 							dec_labels: batch_dec_labels,
 							gold: batch_labels}
-			_, loss_val = session.run([opt_op, loss], feed_dict=feed_dict)
+			_, loss_val, probs, probsgold = session.run([opt_op, loss, probabilities, probabilities_gold], feed_dict=feed_dict)
 			average_loss += loss_val
 
 			if step % 100 == 0:
@@ -231,17 +264,16 @@ if __name__ == '__main__':
 					print("Average loss at step ", step, ": ", average_loss)
 					average_loss = 0
 
-					perm = np.random.permutation(_batch_size)[:_num_test]#[0:_batch_size]
+					batch_enc_inputs = batch_enc_inputs[:_num_test]
+					batch_inputs_length = batch_inputs_length[:_num_test]
+					batch_dec_inputs = batch_dec_inputs[:_num_test]
+					batch_dec_labels = batch_dec_labels[:_num_test]
+
 					for sentence in range(_num_test):
 						s = ''
-						for word in _dec_inputs[perm][sentence]:
+						for word in batch_dec_inputs[sentence]:
 							s=s+_reverse_dictionary[word]+' '
-						print('Gold:', s[1:])
-
-					batch_enc_inputs = _enc_inputs[perm]
-					batch_inputs_length = _sentence_lengths[perm]
-					batch_dec_inputs = np.array(_dec_inputs)[perm]
-					batch_dec_labels = np.array(_dec_labels)[perm]
+						print('Gold:', s)
 
 					feed_dict = {sentences: batch_enc_inputs, 
 									sentences_lengths: batch_inputs_length,
@@ -255,7 +287,3 @@ if __name__ == '__main__':
 							s=s+_reverse_dictionary[word]+' '
 						print('Prediction:', s)
 			
-
-
-
-
