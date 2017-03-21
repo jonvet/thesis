@@ -20,3 +20,7 @@ The structure of the model is as follows:
 ![Figure taken from Kiros et al. \label{kiros}](https://cdn-images-1.medium.com/max/1000/1*MQXaRQ3BsTHpn0cfOXcbag.png)
 
 The Skipthought vector model finds good sentence representations, such that similar sentences are close to each other in vector space. However by relying on two decoders, the method is computationally expensive. If the goal is just to find sentence embeddings, then other methods such as sequential autoencoders might be more efficient alternatives. My project is going to explore these alternatives.
+
+## Work in progress
+
+The current implementation of skipthought is able to overfit a small corpus like 'gingerbread.txt' and to produce gramatically correct sentences on a larger corpus like 'sherlock.txt'. Next steps are to train the model on larger corpora, and to implement potentially more efficient models like a sequential autoencoder.
