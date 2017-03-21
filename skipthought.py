@@ -13,7 +13,7 @@ import csv
 
 class skipthought(object):
 
-    def __init__(self, corpus, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, num_epochs):
+    def __init__(self, corpus, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, num_epochs):
         
         self.corpus = corpus
         self.embedding_size = embedding_size
@@ -24,6 +24,7 @@ class skipthought(object):
         self.learning_rate = learning_rate
         self.bidirectional = bidirectional
         self.loss_function = loss_function
+        self.sampled_words  = sampled_words
         self.num_epochs = num_epochs
 
     def embed_data(self, data):
@@ -92,7 +93,7 @@ class skipthought(object):
         logits = tf.stack(logits)
         logits_reshaped = tf.reshape(logits, [-1, self.embedding_size])
         labels_reshaped = tf.reshape(labels, [-1, 1])
-        loss = tf.nn.sampled_softmax_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = 1000, 
+        loss = tf.nn.sampled_softmax_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = self.sampled_words, 
             num_classes = self.vocabulary_size, num_true=1)
         return tf.reduce_mean(loss)
 
@@ -270,10 +271,9 @@ class skipthought(object):
                     pre_labels_perm = np.array(pre_lab)[perm]
 
                     total_loss = 0
-                    predict_step = 10
+                    predict_step = 50
 
                     for step in range(self.corpus_length // self.batch_size):
-
                         begin = step * self.batch_size
                         end = (step + 1) * self.batch_size
 
@@ -295,50 +295,50 @@ class skipthought(object):
                                     pre_labels: batch_pre_labels,
                                     pre_sentences_lengths: batch_pre_lengths}
 
-                        _, loss_val, batch_summary = session.run([opt_op, loss, merged], feed_dict=train_dict)
+                        _, loss_val, batch_summary, glob_step = session.run([opt_op, loss, merged, global_step], feed_dict=train_dict)
                         train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.batch_size)*epoch)
 
                         total_loss += loss_val
 
-                        if step % predict_step == 0:
-                            if step > 0:
-                                print("Average loss at step ", step, ": ", total_loss/predict_step)
-                                total_loss = 0
+                        if glob_step % predict_step == 0:
+                            # if step > 0:
+                            print("Average loss at step ", glob_step, ": ", total_loss/predict_step)
+                            total_loss = 0
 
-                                print('\nOriginal sequence:\n')
-                                print(self.print_sentence(batch_pre_inputs[0, 1:], batch_pre_lengths[0]-1))
-                                print(self.print_sentence(batch_enc_inputs[0], batch_enc_lengths[0]))
-                                print(self.print_sentence(batch_post_inputs[0, 1:], batch_post_lengths[0]-1))
+                            print('\nOriginal sequence:\n')
+                            print(self.print_sentence(batch_pre_inputs[0, 1:], batch_pre_lengths[0]-1))
+                            print(self.print_sentence(batch_enc_inputs[0], batch_enc_lengths[0]))
+                            print(self.print_sentence(batch_post_inputs[0, 1:], batch_post_lengths[0]-1))
 
-                                test_enc_lengths = np.expand_dims(batch_enc_lengths[0], 0)
-                                test_enc_inputs = np.expand_dims(batch_enc_inputs[0], 0)
-                                test_post_lengths = np.expand_dims(batch_post_lengths[0], 0)
-                                test_post_inputs = np.expand_dims(batch_post_inputs[0], 0)
-                                test_post_labels = np.expand_dims(batch_post_labels[0], 0)
-                                test_pre_lengths = np.expand_dims(batch_pre_lengths[0], 0)
-                                test_pre_inputs = np.expand_dims(batch_pre_inputs[0], 0)
-                                test_pre_labels = np.expand_dims(batch_pre_labels[0], 0)
+                            test_enc_lengths = np.expand_dims(batch_enc_lengths[0], 0)
+                            test_enc_inputs = np.expand_dims(batch_enc_inputs[0], 0)
+                            test_post_lengths = np.expand_dims(batch_post_lengths[0], 0)
+                            test_post_inputs = np.expand_dims(batch_post_inputs[0], 0)
+                            test_post_labels = np.expand_dims(batch_post_labels[0], 0)
+                            test_pre_lengths = np.expand_dims(batch_pre_lengths[0], 0)
+                            test_pre_inputs = np.expand_dims(batch_pre_inputs[0], 0)
+                            test_pre_labels = np.expand_dims(batch_pre_labels[0], 0)
 
-                                test_dict = {sentences_lengths: test_enc_lengths,
-                                            sentences: test_enc_inputs, 
-                                            post_sentences_lengths: test_post_lengths,
-                                            post_inputs: test_post_inputs,
-                                            post_labels: test_post_labels,
-                                            pre_sentences_lengths: test_pre_lengths,
-                                            pre_inputs: test_pre_inputs,
-                                            pre_labels: test_pre_labels}
+                            test_dict = {sentences_lengths: test_enc_lengths,
+                                        sentences: test_enc_inputs, 
+                                        post_sentences_lengths: test_post_lengths,
+                                        post_inputs: test_post_inputs,
+                                        post_labels: test_post_labels,
+                                        pre_sentences_lengths: test_pre_lengths,
+                                        pre_inputs: test_pre_inputs,
+                                        pre_labels: test_pre_labels}
 
-                                pre_prediction, post_prediction = session.run([predict], feed_dict=test_dict)[0]
+                            pre_prediction, post_prediction = session.run([predict], feed_dict=test_dict)[0]
 
-                                print('\nPredicted previous and following sequence around original sentence:\n')
-                                print(self.print_sentence(pre_prediction[0], len(pre_prediction[0])))
-                                print(self.print_sentence(batch_enc_inputs[0], batch_enc_lengths[0]))
-                                print(self.print_sentence(post_prediction[0], len(post_prediction[0])))
+                            print('\nPredicted previous and following sequence around original sentence:\n')
+                            print(self.print_sentence(pre_prediction[0], len(pre_prediction[0])))
+                            print(self.print_sentence(batch_enc_inputs[0], batch_enc_lengths[0]))
+                            print(self.print_sentence(post_prediction[0], len(post_prediction[0])))
 
-                                end_time = time.time()
-                                print('\nTime for 100 steps: %0.2f seconds' % (end_time - start_time))
-                                start_time = time.time()
-                                print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+                            end_time = time.time()
+                            print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
+                            start_time = time.time()
+                            print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
                     saver = tf.train.Saver()
                     saver.save(session, os.path.join('./tensorboard/', 'model.ckpt'))
@@ -351,15 +351,16 @@ class skipthought(object):
 if __name__ == '__main__':
     tf.reset_default_graph()
 
-    model = skipthought(corpus = 'sherlock.txt',
+    model = skipthought(corpus = './corpus/gingerbread.txt',
         embedding_size = 200, 
         hidden_size = 200, 
         hidden_layers = 1, 
-        batch_size = 10, 
+        batch_size = 20, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.005, 
         bidirectional = False,
-        loss_function = 'sampled_softmax',
+        loss_function = 'softmax',
+        sampled_words = 500,
         num_epochs = 100)
 
     model.run()
