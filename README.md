@@ -23,4 +23,7 @@ The Skipthought vector model finds good sentence representations, such that simi
 
 ## Work in progress
 
-The current implementation of skipthought is able to overfit a small corpus like 'gingerbread.txt' and to produce gramatically correct sentences on a larger corpus like 'sherlock.txt'. Next steps are to train the model on larger corpora, and to implement potentially more efficient models like a sequential autoencoder.
+The current implementation of skipthought is able to overfit a small corpus like 'gingerbread.txt' and to produce gramatically correct sentences on a larger corpus like 'sherlock.txt'. Next steps are to
+- train the model on larger corpora;
+- to implement potentially more efficient models like a sequential autoencoder; and
+- to find a network architecture that yields both meaningful word and sentence representations
