@@ -19,7 +19,7 @@ The structure of the model is as follows:
 
 ![Figure taken from Kiros et al. \label{kiros}](https://cdn-images-1.medium.com/max/1000/1*MQXaRQ3BsTHpn0cfOXcbag.png)
 
-The Skipthought vector model finds good sentence representations, such that similar sentences are close to each other in vector space. However by relying on two decoders, the method is computationally expensive. If the goal is just to find sentence embeddings, then other methods such as sequential autoencoders might be more efficient alternatives. My project is going to explore these alternatives.
+The Skipthought vector model finds good sentence representations, such that similar sentences are close to each other in vector space. However by relying on two decoders, the method is computationally expensive. If the goal is just to find sentence embeddings, then other methods such as sequential autoencoders might be more efficient alternatives. Secondly, while the model finds meaningful sentence embeddings, this is not true for the word embeddings. My project is going to address these points.
 
 ## Work in progress
 
