@@ -64,8 +64,8 @@ class skipthought(object):
         # Encoder
         encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.bidirectional)
 
+        # evaluation on SICK data set
         with tf.variable_scope("sick") as varscope:
-
             sick_pairs = tf.reshape(encoded_sentences, [-1, self.hidden_size, 2])
             sent_a = sick_pairs[:,:,0]
             sent_b = sick_pairs[:,:,1]
