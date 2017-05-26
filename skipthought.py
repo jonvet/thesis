@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from util import import_data
 from util import build_dictionary
+from util import word_to_int
 from tensorflow.python.ops import variable_scope
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
@@ -9,6 +10,8 @@ from sys import stdout
 import os
 import operator
 import csv
+import pandas as pd
+import pickle as pkl
 
 class skipthought(object):
 
@@ -25,8 +28,8 @@ class skipthought(object):
         self.sampled_words  = sampled_words
         self.num_epochs = num_epochs
         self.dictionary, self.reverse_dictionary, sent_lengths, self.max_sent_len, enc_data, dec_data, dec_lab = build_dictionary(import_data(self.corpus))
-        self.dictionary = sorted(self.dictionary.items(), key=operator.itemgetter(1))
-        self.vocabulary_size = len(self.dictionary)
+        self.dictionary_sorted = sorted(self.dictionary.items(), key=operator.itemgetter(1))
+        self.vocabulary_size = len(self.dictionary_sorted)
         self.max_sent_len += 1
         self.data = skipthought_data(enc_data = enc_data, dec_data = dec_data, dec_lab = dec_lab, sent_lengths = sent_lengths)
 
@@ -62,26 +65,14 @@ class skipthought(object):
         pre_inputs_embedded = self.embed_data(self.pre_inputs)
 
         # Encoder
-        encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.bidirectional)
-
-        # evaluation on SICK data set
-        with tf.variable_scope("sick") as varscope:
-            sick_pairs = tf.reshape(encoded_sentences, [-1, self.hidden_size, 2])
-            sent_a = sick_pairs[:,:,0]
-            sent_b = sick_pairs[:,:,1]
-            sick_feature_1 = tf.norm(sent_a, ord = 1, axis = 1) - tf.norm(sent_b, ord = 1, axis = 1)
-            sick_feature_2 = tf.reduce_sum(tf.multiply(sent_a, sent_b), axis = 1)
-            sick_inputs = tf.concat([tf.reshape(sick_feature_1, [-1,1]), tf.reshape(sick_feature_2, [-1,1])], axis = 1)
-            self.scores = tf.contrib.layers.linear(sick_inputs, 1)
-            scores_ceil = tf.ceil(scores)
-
+        self.encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.bidirectional)
 
         # Decoder for following sentence
-        post_logits_projected, post_logits = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = encoded_sentences, 
+        post_logits_projected, post_logits = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'postcoder', lengths = self.post_sentences_lengths, train = True)
         
         # Decoder for previous sentence
-        pre_logits_projected, pre_logits = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = encoded_sentences, 
+        pre_logits_projected, pre_logits = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'precoder', lengths = self.pre_sentences_lengths, train = True)
         
         # Compute loss
@@ -97,9 +88,9 @@ class skipthought(object):
             optimizer = 'Adam', clip_gradients=2.0, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
-        pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = encoded_sentences, 
+        pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'precoder', lengths = self.pre_sentences_lengths, train = False)
-        post_predict = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = encoded_sentences, 
+        post_predict = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'postcoder', lengths = self.post_sentences_lengths, train = False)
         self.predict = [pre_predict, post_predict]
 
@@ -174,29 +165,25 @@ class skipthought(object):
             os.mkdir('./model/')
         saver = tf.train.Saver()
         saver.save(session, './model/epoch_%d.checkpoint' % epoch)
+        with open('./model/dict_files.pkl', 'wb') as f:
+            pkl.dump([self.dictionary, self.reverse_dictionary, self.dictionary_sorted], f)
 
     def load_model(self, path):
         self.sess = tf.Session(graph = self.graph)
         saver = tf.train.Saver()
         logdir = tf.train.latest_checkpoint(path)
         saver.restore(self.sess, logdir)
+        print('Model restored')
+        with open(path + 'dict_files.pkl', 'rb') as f:
+            self.dictionary, self.reverse_dictionary, self.dictionary_sorted = pkl.load(f)
+        print('Dictionary loaded')
 
     def corpus_stats(self):
         print('\n~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('Corpus name:', self.corpus)
-        print('Vocabulary size:', len(self.dictionary))
+        print('Vocabulary size:', len(self.dictionary_sorted))
         print('Number of sentences:', self.corpus_length)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
-
-    # def eval_sick(self, sentences = None):
-    #     test_enc_inputs = self.data.enc_data[:10]
-    #     test_enc_lengths = self.data.enc_lengths[:10]
-    #     test_dict = {self.sentences_lengths: test_enc_lengths,
-    #                 self.sentences: test_enc_inputs}
-
-    #     sick_logits = self.sess.run([self.sick_logits], feed_dict=test_dict)[0]
-    #     print(sick_logits)
-    #     return
 
     def evaluate(self, index = None):
         i = index if index != None else np.random.permutation(len(self.data.enc_data))
@@ -225,6 +212,12 @@ class skipthought(object):
         print(self.print_sentence(pre_prediction[0], len(pre_prediction[0])))
         print(self.print_sentence(self.data.enc_data[i], self.data.enc_lengths[i]))
         print(self.print_sentence(post_prediction[0], len(post_prediction[0])))
+
+    def encode(self, sentences, lengths):
+        encode_dict = {self.sentences: sentences,
+                       self.sentences_lengths: lengths}
+        encoded_sentences = self.sess.run([self.encoded_sentences], feed_dict=encode_dict)
+        return np.array(encoded_sentences)
 
     def train(self):
 
@@ -326,6 +319,7 @@ class skipthought_data(object):
         self.pre_lab = dec_lab[:-2]
 
 
+
 if __name__ == '__main__':
 
     tf.reset_default_graph()
@@ -342,7 +336,6 @@ if __name__ == '__main__':
         sampled_words = 500,
         num_epochs = 100)
 
-    model.train()
-    # model.load_model('./model/')
-    # model.evaluate(1)
-    # model.eval_sick()
+    # model.train()
+    model.load_model('./model/')
+    model.evaluate(1)
