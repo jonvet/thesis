@@ -13,10 +13,23 @@ import csv
 import pandas as pd
 import pickle as pkl
 
-class skipthought(object):
+class skipthought_data(object):
 
-    def __init__(self, corpus, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, num_epochs):
-        self.corpus = corpus
+    # Create datasets for encoder and decoders
+
+    def __init__(self, enc_data, dec_data, dec_lab, sent_lengths):
+        self.enc_data = enc_data[1:-1]
+        self.enc_lengths = sent_lengths[1:-1] 
+        self.post_lengths = sent_lengths[2:] + 1
+        self.post_data = dec_data[2:]
+        self.post_lab = dec_lab[2:]
+        self.pre_lengths = sent_lengths[:-2] + 1
+        self.pre_data = dec_data[:-2]
+        self.pre_lab = dec_lab[:-2]
+
+class skipthought_para(object):
+
+    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, num_epochs):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -25,8 +38,14 @@ class skipthought(object):
         self.learning_rate = learning_rate
         self.bidirectional = bidirectional
         self.loss_function = loss_function
-        self.sampled_words  = sampled_words
+        self.sampled_words = sampled_words
         self.num_epochs = num_epochs
+
+class skipthought_model(object):
+
+    def __init__(self, corpus, parameters):
+        self.corpus = corpus
+        self.para = parameters
         self.dictionary, self.reverse_dictionary, sent_lengths, self.max_sent_len, enc_data, dec_data, dec_lab = build_dictionary(import_data(self.corpus))
         self.dictionary_sorted = sorted(self.dictionary.items(), key=operator.itemgetter(1))
         self.vocabulary_size = len(self.dictionary_sorted)
@@ -38,10 +57,10 @@ class skipthought(object):
         self.initializer = tf.random_normal_initializer()
 
         # Variables
-        self.word_embeddings = tf.get_variable('embeddings', [self.vocabulary_size, self.embedding_size], tf.float32, initializer = self.initializer)
-        self.W_pre = tf.get_variable('precoder/weight', [self.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
+        self.word_embeddings = tf.get_variable('embeddings', [self.vocabulary_size, self.para.embedding_size], tf.float32, initializer = self.initializer)
+        self.W_pre = tf.get_variable('precoder/weight', [self.para.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.b_pre = tf.get_variable('precoder/bias', [self.vocabulary_size], tf.float32, initializer = self.initializer)
-        self.W_post = tf.get_variable('postcoder/weight', [self.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
+        self.W_post = tf.get_variable('postcoder/weight', [self.para.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.b_post = tf.get_variable('postcoder/bias', [self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.global_step = tf.Variable(0, name = 'global_step', trainable = False)
 
@@ -65,7 +84,7 @@ class skipthought(object):
         pre_inputs_embedded = self.embed_data(self.pre_inputs)
 
         # Encoder
-        self.encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.bidirectional)
+        self.encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.para.bidirectional)
 
         # Decoder for following sentence
         post_logits_projected, post_logits = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
@@ -76,7 +95,7 @@ class skipthought(object):
             name = 'precoder', lengths = self.pre_sentences_lengths, train = True)
         
         # Compute loss
-        if self.loss_function == 'softmax':
+        if self.para.loss_function == 'softmax':
             post_loss = self.get_softmax_loss(self.post_labels, post_logits_projected) 
             pre_loss = self.get_softmax_loss(self.pre_labels, pre_logits_projected) 
         else:
@@ -84,7 +103,7 @@ class skipthought(object):
             pre_loss = self.get_sampled_softmax_loss(self.pre_labels, pre_logits, name='precoder') 
 
         self.loss = pre_loss + post_loss
-        self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.learning_rate, 
+        self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.para.learning_rate, 
             optimizer = 'Adam', clip_gradients=2.0, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
@@ -100,19 +119,19 @@ class skipthought(object):
     def encoder(self, sentences_embedded, sentences_lengths, bidirectional = False):
         with tf.variable_scope("encoder") as varscope:
             if bidirectional:
-                cell = tf.contrib.rnn.GRUCell(self.hidden_size//2)
-                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.keep_prob_dropout)
-                cell = tf.contrib.rnn.MultiRNNCell([cell]*self.hidden_layers, state_is_tuple=True)
+                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size//2)
+                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
+                cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Training bidirectional RNN')
                 sentences_outputs, sentences_states = tf.nn.bidirectional_dynamic_rnn(cell, cell, 
                     inputs = sentences_embedded, sequence_length=sentences_lengths, dtype=tf.float32)
                 states_fw, states_bw = sentences_states
                 sentences_states_h = tf.concat([states_fw[-1],states_bw[-1]], axis = 1)
-                # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.hidden_size)
+                # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
             else:
-                cell = tf.contrib.rnn.GRUCell(self.hidden_size)
-                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.keep_prob_dropout)
-                cell = tf.contrib.rnn.MultiRNNCell([cell]*self.hidden_layers, state_is_tuple=True)
+                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
+                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
+                cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Training one-directional RNN')
                 sentences_outputs, sentences_states = tf.nn.dynamic_rnn(cell = cell, 
                     inputs = sentences_embedded, sequence_length=sentences_lengths, dtype=tf.float32)   
@@ -120,7 +139,7 @@ class skipthought(object):
         return sentences_states_h
 
     def decoder(self, decoder_inputs, encoder_state, name, lengths= None, train = True):
-        dec_cell = tf.contrib.rnn.GRUCell(self.embedding_size)
+        dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         if train:
@@ -128,9 +147,9 @@ class skipthought(object):
                 dynamic_fn_train = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
                 outputs_train, state_train, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_train, 
                     inputs=decoder_inputs, sequence_length = lengths, scope = varscope)
-                logits = tf.reshape(outputs_train, [-1, self.embedding_size])
+                logits = tf.reshape(outputs_train, [-1, self.para.embedding_size])
                 logits_train = tf.matmul(logits, W) + b
-                logits_projected = tf.reshape(logits_train, [self.batch_size, tf.reduce_max(lengths), self.vocabulary_size])
+                logits_projected = tf.reshape(logits_train, [self.para.batch_size, tf.reduce_max(lengths), self.vocabulary_size])
                 return logits_projected, outputs_train
         else:
             with tf.variable_scope(name, reuse = True) as varscope:
@@ -147,9 +166,9 @@ class skipthought(object):
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         logits = tf.stack(logits)
-        logits_reshaped = tf.reshape(logits, [-1, self.embedding_size])
+        logits_reshaped = tf.reshape(logits, [-1, self.para.embedding_size])
         labels_reshaped = tf.reshape(labels, [-1, 1])
-        loss = tf.nn.sampled_softmax_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = self.sampled_words, 
+        loss = tf.nn.sampled_softmax_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = self.para.sampled_words, 
             num_classes = self.vocabulary_size, num_true=1)
         return tf.reduce_mean(loss)
 
@@ -248,7 +267,7 @@ class skipthought(object):
         start_time = time.time()
         try:
             train_summaryIndex = -1
-            for epoch in range(self.num_epochs):
+            for epoch in range(self.para.num_epochs):
                 self.is_train = True
                 epoch_time = time.time()
                 print('----- Epoch', epoch, '-----')
@@ -266,9 +285,9 @@ class skipthought(object):
                 total_loss = 0
                 predict_step = 5
 
-                for step in range(self.corpus_length // self.batch_size):
-                    begin = step * self.batch_size
-                    end = (step + 1) * self.batch_size
+                for step in range(self.corpus_length // self.para.batch_size):
+                    begin = step * self.para.batch_size
+                    end = (step + 1) * self.para.batch_size
                     batch_enc_lengths = enc_lengths_perm[begin : end]
                     batch_enc_inputs = enc_data_perm[begin : end]
                     batch_post_lengths = post_lengths_perm[begin : end]
@@ -286,7 +305,7 @@ class skipthought(object):
                                 self.pre_inputs: batch_pre_inputs,
                                 self.pre_labels: batch_pre_labels}
                     _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, merged], feed_dict=train_dict)
-                    train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.batch_size)*epoch)
+                    train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size)*epoch)
                     total_loss += loss_val
 
                     if self.global_step.eval(session = self.sess) % predict_step == 0:
@@ -304,28 +323,11 @@ class skipthought(object):
             if 'y' in save:
                 self.save_model(self.sess, 0)
 
-class skipthought_data(object):
-
-    # Create datasets for encoder and decoders
-
-    def __init__(self, enc_data, dec_data, dec_lab, sent_lengths):
-        self.enc_data = enc_data[1:-1]
-        self.enc_lengths = sent_lengths[1:-1] 
-        self.post_lengths = sent_lengths[2:] + 1
-        self.post_data = dec_data[2:]
-        self.post_lab = dec_lab[2:]
-        self.pre_lengths = sent_lengths[:-2] + 1
-        self.pre_data = dec_data[:-2]
-        self.pre_lab = dec_lab[:-2]
-
-
-
 if __name__ == '__main__':
 
     tf.reset_default_graph()
 
-    model = skipthought(corpus = './corpus/gingerbread.txt',
-        embedding_size = 200, 
+    paras = skipthought_para(embedding_size = 200, 
         hidden_size = 200, 
         hidden_layers = 2, 
         batch_size = 32, 
@@ -335,6 +337,7 @@ if __name__ == '__main__':
         loss_function = 'softmax',
         sampled_words = 500,
         num_epochs = 100)
+    model = skipthought_model(corpus = './corpus/gingerbread.txt', parameters = paras)
 
     # model.train()
     model.load_model('./model/')

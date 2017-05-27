@@ -20,6 +20,36 @@ def import_data(path):
         words.append(this_sentence)
     return words
 
+def word_to_int(sentences, vocab, max_sent_len_=None):
+
+    '''
+    Encodes sentences using the vocabulary provided
+    '''
+
+    data_sentences = []
+    max_sent_len = -1
+    for sentence in sentences:
+        words = []
+        for word in sentence:
+            if word not in vocab:
+                token_id = vocab['<OOV>']
+            else:
+                token_id = vocab[word]
+            words.append(token_id)
+        if len(words) > max_sent_len:
+            max_sent_len = len(words)
+        data_sentences.append(words)
+    if max_sent_len_ is not None:
+        max_sent_len = max_sent_len_
+    enc_sentences = np.full([len(data_sentences), max_sent_len], vocab['<PAD>'], dtype=np.int32)
+    sentence_lengths = []
+    for i, sentence in enumerate(data_sentences):
+        sentence_lengths.append(len(sentence))
+        enc_sentences[i, 0:len(sentence)] = sentence
+    sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
+
+    return sentence_lengths, max_sent_len, enc_sentences
+
 def build_dictionary(sentences, vocab=None, max_sent_len_=None):
 
     is_ext_vocab = True
@@ -80,4 +110,3 @@ def build_dictionary(sentences, vocab=None, max_sent_len_=None):
 
 # words, sentences = import_data('finn.txt')
 # vocab, reverse_dictionary, sentence_lengths, max_sent_len, enc_sentences, dec_go_sentences, dec_end_sentences = build_dictionary(words)
-

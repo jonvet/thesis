@@ -3,13 +3,6 @@ import numpy as np
 from util import import_data
 from util import build_dictionary
 from util import word_to_int
-from tensorflow.python.ops import variable_scope
-from tensorflow.contrib.tensorboard.plugins import projector
-import time
-from sys import stdout
-import os
-import operator
-import csv
 from skipthought import skipthought
 import pandas as pd
 import pickle as pkl
@@ -19,7 +12,7 @@ from sklearn.metrics import mean_squared_error as mse
 
 def encode_labels(labels, nclass=5):
     """
-    Label encoding from Tree LSTM paper (Tai, Socher, Manning)
+    https://github.com/ryankiros/skip-thoughts/
     """
     Y = np.zeros((len(labels), nclass)).astype('float32')
     for j, y in enumerate(labels):
@@ -121,7 +114,7 @@ if __name__ == '__main__':
                     dev_dict = {sick_scores: dev_score_encoded,
                             sick_feature_1: dev_feature_1,
                             sick_feature_2: dev_feature_2}
-                    _, dev_loss, dev_prediction,l,h = sess.run([opt_op, loss, prediction,logits, hidden], feed_dict=dev_dict)
+                    _, dev_loss, dev_prediction = sess.run([opt_op, loss, prediction], feed_dict=dev_dict)
                     pr = pearsonr(dev_prediction[:,0], dev_score)[0]
                     sr = spearmanr(dev_prediction[:,0], dev_score)[0]
                     se = mse(dev_prediction[:,0], dev_score)
