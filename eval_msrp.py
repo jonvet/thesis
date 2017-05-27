@@ -3,7 +3,7 @@ import numpy as np
 from util import import_data
 from util import build_dictionary
 from util import word_to_int
-from skipthought import skipthought
+from skipthought import skipthought_model
 import pandas as pd
 import pickle as pkl
 from scipy.stats import pearsonr
@@ -103,7 +103,7 @@ if __name__ == '__main__':
         dictionary, reverse_dictionary, dictionary_sorted = pkl.load(f)
     sent_lengths, _, sentences = word_to_int(sent_all[:_temp_size], dictionary)
     tf.reset_default_graph()
-    model = skipthought(corpus = './corpus/gingerbread.txt',
+    model = skipthought_model(corpus = './corpus/gingerbread.txt',
         embedding_size = 200, 
         hidden_size = 200, 
         hidden_layers = 2, 
