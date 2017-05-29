@@ -1,8 +1,7 @@
 import tensorflow as tf
 import numpy as np
-from util import import_data
-from util import build_dictionary
-from util import word_to_int
+import util
+from util import word_vocab
 from tensorflow.python.ops import variable_scope
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
@@ -17,7 +16,8 @@ class skipthought_data(object):
 
     # Create datasets for encoder and decoders
 
-    def __init__(self, enc_data, dec_data, dec_lab, sent_lengths):
+    def __init__(self, tokenised_sentences, vocab, max_sent_len_=None): #enc_data, dec_data, dec_lab, sent_lengths):
+        sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(tokenised_sentences, vocab.dictionary, decoder=True)
         self.enc_data = enc_data[1:-1]
         self.enc_lengths = sent_lengths[1:-1] 
         self.post_lengths = sent_lengths[2:] + 1
@@ -26,6 +26,12 @@ class skipthought_data(object):
         self.pre_lengths = sent_lengths[:-2] + 1
         self.pre_data = dec_data[:-2]
         self.pre_lab = dec_lab[:-2]
+        self.corpus_name = vocab.corpus_name
+        self.max_sent_len = max_sent_len
+
+    def save(self, path):
+        with open(path + 'data.pkl', 'wb') as f:
+            pkl.dump(self, f)
 
 class skipthought_para(object):
 
@@ -43,15 +49,13 @@ class skipthought_para(object):
 
 class skipthought_model(object):
 
-    def __init__(self, corpus, parameters):
-        self.corpus = corpus
+    def __init__(self, data, vocab, parameters, path):
+        self.data = data
         self.para = parameters
-        self.dictionary, self.reverse_dictionary, sent_lengths, self.max_sent_len, enc_data, dec_data, dec_lab = build_dictionary(import_data(self.corpus))
-        self.dictionary_sorted = sorted(self.dictionary.items(), key=operator.itemgetter(1))
-        self.vocabulary_size = len(self.dictionary_sorted)
-        self.max_sent_len += 1
-        self.data = skipthought_data(enc_data = enc_data, dec_data = dec_data, dec_lab = dec_lab, sent_lengths = sent_lengths)
-
+        self.vocab = vocab
+        self.vocabulary_size = len(self.vocab.sorted_dictionary)
+        self.path = path
+        
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
         self.initializer = tf.random_normal_initializer()
@@ -155,7 +159,7 @@ class skipthought_model(object):
             with tf.variable_scope(name, reuse = True) as varscope:
                 output_fn = lambda x: tf.nn.softmax(tf.matmul(x, W) + b)
                 dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(output_fn =output_fn, encoder_state = encoder_state, 
-                    embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
+                    embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.data.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
                 logits_inference, state_inference,_ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_inference, scope = varscope)
                 return tf.arg_max(logits_inference, 2)
 
@@ -176,7 +180,7 @@ class skipthought_model(object):
         s = ''
         for i in range(length):
             word = sentence[i]
-            s = s+self.reverse_dictionary[word]+' '
+            s = s+self.vocab.reverse_dictionary[word]+' '
         return s
 
     def save_model(self, session, epoch):
@@ -184,8 +188,6 @@ class skipthought_model(object):
             os.mkdir('./model/')
         saver = tf.train.Saver()
         saver.save(session, './model/epoch_%d.checkpoint' % epoch)
-        with open('./model/dict_files.pkl', 'wb') as f:
-            pkl.dump([self.dictionary, self.reverse_dictionary, self.dictionary_sorted], f)
 
     def load_model(self, path):
         self.sess = tf.Session(graph = self.graph)
@@ -193,14 +195,11 @@ class skipthought_model(object):
         logdir = tf.train.latest_checkpoint(path)
         saver.restore(self.sess, logdir)
         print('Model restored')
-        with open(path + 'dict_files.pkl', 'rb') as f:
-            self.dictionary, self.reverse_dictionary, self.dictionary_sorted = pkl.load(f)
-        print('Dictionary loaded')
 
     def corpus_stats(self):
         print('\n~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print('Corpus name:', self.corpus)
-        print('Vocabulary size:', len(self.dictionary_sorted))
+        print('Corpus name:', self.vocab.corpus_name)
+        print('Vocabulary size:', len(self.vocab.sorted_dictionary))
         print('Number of sentences:', self.corpus_length)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
 
@@ -323,22 +322,50 @@ class skipthought_model(object):
             if 'y' in save:
                 self.save_model(self.sess, 0)
 
+def initialise(raw_txt_file, corpus_name):
+
+    '''
+    Needs to be run only once.
+    This routine will save a skipthought_data and a vocab object.
+    '''
+
+    path = './models/skipthought_' + corpus_name +'/'
+    if not os.path.exists(path):
+        os.makedirs(path)
+    tokenised_sentences1 = util.txt_to_sent('./corpus/ap1.txt')
+    tokenised_sentences2 = util.txt_to_sent('./corpus/ap2.txt')
+    tokenised_sentences3 = util.txt_to_sent('./corpus/bp1.txt')
+    tokenised_sentences4 = util.txt_to_sent('./corpus/bp2.txt')
+    tokenised_sentences = tokenised_sentences1 + tokenised_sentences2 + tokenised_sentences3 + tokenised_sentences4
+    vocab = word_vocab(tokenised_sentences, corpus_name)
+    data = skipthought_data(tokenised_sentences, vocab)
+    vocab.save(path)
+    data.save(path)
+
+
 if __name__ == '__main__':
 
-    tf.reset_default_graph()
+    initialise('./corpus/gingerbread.txt', 'toronto')
 
-    paras = skipthought_para(embedding_size = 200, 
-        hidden_size = 200, 
-        hidden_layers = 2, 
-        batch_size = 32, 
-        keep_prob_dropout = 1.0, 
-        learning_rate = 0.005, 
-        bidirectional = False,
-        loss_function = 'softmax',
-        sampled_words = 500,
-        num_epochs = 100)
-    model = skipthought_model(corpus = './corpus/gingerbread.txt', parameters = paras)
+    # tf.reset_default_graph()
+    # corpus = 'gingerbread'
+    # with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
+    #     vocab = pkl.load(f)
+    # with open('./models/skipthought_' + corpus + '/data.pkl', 'rb') as f:
+    #     data = pkl.load(f)
+
+    # paras = skipthought_para(embedding_size = 200, 
+    #     hidden_size = 200, 
+    #     hidden_layers = 2, 
+    #     batch_size = 32, 
+    #     keep_prob_dropout = 1.0, 
+    #     learning_rate = 0.005, 
+    #     bidirectional = False,
+    #     loss_function = 'softmax',
+    #     sampled_words = 500,
+    #     num_epochs = 100)
+    # model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
 
     # model.train()
-    model.load_model('./model/')
-    model.evaluate(1)
+    # model.load_model('./model/')
+    # model.evaluate(1)
