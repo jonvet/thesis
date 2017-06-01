@@ -11,13 +11,15 @@ import operator
 import csv
 import pandas as pd
 import pickle as pkl
+from collections import defaultdict
 
 class skipthought_data(object):
 
     # Create datasets for encoder and decoders
 
-    def __init__(self, tokenised_sentences, vocab, max_sent_len_=None): #enc_data, dec_data, dec_lab, sent_lengths):
-        sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(tokenised_sentences, vocab.dictionary, decoder=True)
+    def __init__(self, path, vocab, corpus_name, max_sent_len_=None): #enc_data, dec_data, dec_lab, sent_lengths):
+
+        sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(path, dictionary=vocab, max_sent_len=20, decoder=True)
         self.enc_data = enc_data[1:-1]
         self.enc_lengths = sent_lengths[1:-1] 
         self.post_lengths = sent_lengths[2:] + 1
@@ -26,11 +28,11 @@ class skipthought_data(object):
         self.pre_lengths = sent_lengths[:-2] + 1
         self.pre_data = dec_data[:-2]
         self.pre_lab = dec_lab[:-2]
-        self.corpus_name = vocab.corpus_name
+        self.corpus_name = corpus_name
         self.max_sent_len = max_sent_len
 
-    def save(self, path):
-        with open(path + 'data.pkl', 'wb') as f:
+    def save(self, path, i=0):
+        with open(path + 'data_%d.pkl' %i, 'wb') as f:
             pkl.dump(self, f)
 
 class skipthought_para(object):
@@ -53,7 +55,9 @@ class skipthought_model(object):
         self.data = data
         self.para = parameters
         self.vocab = vocab
-        self.vocabulary_size = len(self.vocab.sorted_dictionary)
+        self.reverse_vocab = dict(zip(self.vocab.values(), self.vocab.keys()))
+        self.sorted_vocab = sorted(self.vocab.items(), key=operator.itemgetter(1))
+        self.vocabulary_size = len(self.sorted_vocab)
         self.path = path
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
@@ -180,7 +184,7 @@ class skipthought_model(object):
         s = ''
         for i in range(length):
             word = sentence[i]
-            s = s+self.vocab.reverse_dictionary[word]+' '
+            s = s+self.reverse_dictionary[word]+' '
         return s
 
     def save_model(self, session, epoch):
@@ -198,8 +202,8 @@ class skipthought_model(object):
 
     def corpus_stats(self):
         print('\n~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print('Corpus name:', self.vocab.corpus_name)
-        print('Vocabulary size:', len(self.vocab.sorted_dictionary))
+        print('Corpus name:', self.data.corpus_name)
+        print('Vocabulary size:', len(self.sorted_dictionary))
         print('Number of sentences:', self.corpus_length)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
 
@@ -332,15 +336,28 @@ def initialise(raw_txt_file, corpus_name):
     path = './models/skipthought_' + corpus_name +'/'
     if not os.path.exists(path):
         os.makedirs(path)
-    tokenised_sentences1 = util.txt_to_sent('./corpus/ap1.txt')
-    tokenised_sentences2 = util.txt_to_sent('./corpus/ap2.txt')
-    tokenised_sentences3 = util.txt_to_sent('./corpus/bp1.txt')
-    tokenised_sentences4 = util.txt_to_sent('./corpus/bp2.txt')
-    tokenised_sentences = tokenised_sentences1 + tokenised_sentences2 + tokenised_sentences3 + tokenised_sentences4
-    vocab = word_vocab(tokenised_sentences, corpus_name)
-    data = skipthought_data(tokenised_sentences, vocab)
-    vocab.save(path)
-    data.save(path)
+    parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
+    # parts = ['./corpus/bp2.txt']
+    # with open('./corpus/ap1.txt.pkl', 'rb') as f:
+    #     vocab = pkl.load(f)
+    # vocab = defaultdict(int)
+    # for part in parts:
+    #     vocab = word_vocab(part, vocab_name =part, vocab=vocab)
+    #     print('\ncreated vocab')
+
+    i = 0
+    with open('./models/skipthought_' + corpus_name + '/vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+
+    path = './corpus/'
+    # for part in os.listdir('./corpus/toronto_corpus/a/'):
+    #     i+=1
+    part = 'bp2.txt'
+        # tokenised_sentences = util.txt_to_sent(part)
+        # print('\nshit tokenised')
+    data = skipthought_data(path + part, vocab, corpus_name, 20)
+    print('created data')
+    data.save(path,i)
 
 
 if __name__ == '__main__':

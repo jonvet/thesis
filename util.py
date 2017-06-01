@@ -3,91 +3,116 @@ import tensorflow as tf
 import numpy as np
 import operator
 import pickle as pkl
+from collections import defaultdict
 
-class word_vocab(object):
+def word_vocab(path, vocab_name=None, vocab=None):
 
-    '''
-    Takes as input a list of tokenised sentences (where each sentences is a list of words)
-    Creates a dictionary, reverse dictionary (both dictionaries) and a sorted dictionary (a list)
-    '''
+    if vocab == None:
+        vocab = defaultdict(int)
+    count = 1
+    with open(path, 'r') as f:
+        for sentence in f:
+            print('\rSentence %d' %count, end='')
+            count += 1
+            this_sentence = sentence.split()
+            for word in this_sentence:
+                vocab[word] += 1
+    with open(vocab_name + '.pkl', 'wb') as f:
+        pkl.dump(vocab, f)
+    return vocab
 
-    def __init__(self, tokenised_sentences, corpus_name=None):
-        self.dictionary = {'<PAD>': 0, '<OOV>': 1, '<GO>': 2, '<END>': 3}
-        for sentence in tokenised_sentences:
-            words = []
-            for word in sentence:
-                if word not in self.dictionary:
-                    self.dictionary[word] = len(self.dictionary)
-        self.reverse_dictionary = dict(zip(self.dictionary.values(), self.dictionary.keys()))
-        self.sorted_dictionary = sorted(self.dictionary.items(), key=operator.itemgetter(1))
-        self.corpus_name = corpus_name
-
-    def save(self, path):
-        with open(path + 'vocab.pkl', 'wb') as f:
-            pkl.dump(self, f)
+def finalise_vocab(path, source, target, target_size):
+    with open(path + source, 'rb') as f:
+        raw_vocab = pkl.load(f)
+    sorted_vocab = sorted(raw_vocab.items(), key=operator.itemgetter(1))
+    sorted_vocab = sorted_vocab[-vocab_size:]
+    final_dict = {'<PAD>': 0, '<OOV>': 1, '<GO>': 2, '<END>': 3}
+    for word in sorted_vocab:
+        final_dict[word[0]] = len(final_dict)
+    with open(path + target, 'wb') as f:
+        pkl.dump(final_dict, f)
 
 def txt_to_sent(path):
 
     '''
-    Imports data and tokenises data.
+    Imports and tokenises a corpus.
     Outputs a list of sentences, where each sentence is itself a list of words
     '''
 
     sentences = []
     tokenised_sentences = []
+    count = 1
     with open(path, 'r') as f:
-        data = f.read().replace('\n', ' ')
-    sentences = nltk.sent_tokenize(data)
-    for sentence in sentences:
-        this_sentence = nltk.word_tokenize(sentence)
-        tokenised_sentences.append(this_sentence)
+        for sentence in f:
+            print('\rSentence %d' %count, end='')
+            this_sentence = sentence.split()
+            # this_sentence = nltk.word_tokenize(sentence)
+            tokenised_sentences.append(this_sentence)
+            count +=1
     return tokenised_sentences
 
-def sent_to_int(sentences, dictionary, decoder=False, max_sent_len_=None):
+    # with open(path, 'r') as f:
+    #     data = f.read().replace('\n', ' ')
+    # sentences = nltk.sent_tokenize(data)
+    # for sentence in sentences:
+    #     this_sentence = nltk.word_tokenize(sentence)
+    #     tokenised_sentences.append(this_sentence)
+    # return tokenised_sentences
+
+def sent_to_int(path, dictionary, max_sent_len, decoder=False):
 
     '''
     Encodes sentences using the vocabulary provided
     If decoder = True, it will also return every sentences with a <GO> token in front, and every sentence with a <END> token at the end.
     '''
 
-    data_sentences = []
-    max_sent_len = -1
-    for sentence in sentences:
-        words = []
-        for word in sentence:
-            if word not in dictionary:
-                token_id = dictionary['<OOV>']
-            else:
-                token_id = dictionary[word]
-            words.append(token_id)
-        if len(words) > max_sent_len:
-            max_sent_len = len(words)
-        data_sentences.append(words)
-    if max_sent_len_ is not None:
-        max_sent_len = max_sent_len_
+    lines = 0
+    # if max_sent_len_ is not None:
+    #     max_sent_len = max_sent_len_
+    with open(path, 'r') as f:
+        for line in f:
+            lines += 1
+    print('%d lines to do\n' % lines)
+
     if decoder:
-        enc_sentences = np.full([len(data_sentences), max_sent_len], dictionary['<PAD>'], dtype=np.int32)
-        dec_go_sentences = np.full([len(data_sentences), max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
-        dec_end_sentences = np.full([len(data_sentences), max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
-        sentence_lengths = []
-        for i, sentence in enumerate(data_sentences):
-            sentence_lengths.append(len(sentence))
-            enc_sentences[i, 0:len(sentence)] = sentence
-            dec_go_sentences[i, 0] = dictionary['<GO>']
-            dec_go_sentences[i, 1:len(sentence)+1] = sentence
-            dec_go_sentences[i, len(sentence)+1] = dictionary['<END>']
-            dec_end_sentences[i, 0:len(sentence)] = sentence
-            dec_end_sentences[i, len(sentence)] = dictionary['<END>']
-        sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
-        return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
+        enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
+        dec_go_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
+        dec_end_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
+        sentence_lengths = np.full([lines, 1], 0, dtype=np.int32)
     else:
-        enc_sentences = np.full([len(data_sentences), max_sent_len], dictionary['<PAD>'], dtype=np.int32)
+        enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
         sentence_lengths = []
-        for i, sentence in enumerate(data_sentences):
-            sentence_lengths.append(len(sentence))
-            enc_sentences[i, 0:len(sentence)] = sentence
-        sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
-        return sentence_lengths, max_sent_len, enc_sentences
+
+
+    i = 0
+    print('\nSTART')
+    with open(path, 'r') as f:
+        for sent in f:
+            print('\rSentence %d' %i, end='')
+            sentence = sent.split()
+            words = []
+            for word in sentence:
+                if word not in dictionary:
+                    token_id = dictionary['<OOV>']
+                else:
+                    token_id = dictionary[word]
+                words.append(token_id)
+            sentence_lengths[i] = len(sentence)
+            enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+            dec_go_sentences[i, 0] = dictionary['<GO>']
+            dec_go_sentences[i, 1:min(len(sentence),max_sent_len)+1] = words[:min(len(sentence),max_sent_len)]
+            dec_go_sentences[i, min(len(sentence),max_sent_len)+1] = dictionary['<END>']
+            dec_end_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+            dec_end_sentences[i, min(len(sentence),max_sent_len)] = dictionary['<END>']
+            i += 1
+
+    return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
+    
+        # for i, sentence in enumerate(data_sentences):
+        #     sentence_lengths.append(len(sentence))
+        #     enc_sentences[i, 0:len(sentence)] = sentence
+        # sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
+        # return sentence_lengths, max_sent_len, enc_sentences
 
 def build_char_dictionary(text, vocab=None, max_sent_len_=None, max_word_len_=None):
 
