@@ -78,7 +78,7 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
         enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
         dec_go_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
         dec_end_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
-        sentence_lengths = np.full([lines, 1], 0, dtype=np.int32)
+        sentence_lengths = np.full([lines], 0, dtype=np.int32)
     else:
         enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
         sentence_lengths = []
@@ -97,7 +97,7 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
                 else:
                     token_id = dictionary[word]
                 words.append(token_id)
-            sentence_lengths[i] = len(sentence)
+            sentence_lengths[i] = min(len(sentence),max_sent_len)
             enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
             dec_go_sentences[i, 0] = dictionary['<GO>']
             dec_go_sentences[i, 1:min(len(sentence),max_sent_len)+1] = words[:min(len(sentence),max_sent_len)]

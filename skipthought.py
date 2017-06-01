@@ -7,6 +7,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
 import os
+import glob
 import operator
 import csv
 import pandas as pd
@@ -59,6 +60,8 @@ class skipthought_model(object):
         self.sorted_vocab = sorted(self.vocab.items(), key=operator.itemgetter(1))
         self.vocabulary_size = len(self.sorted_vocab)
         self.path = path
+        self.corpus_length = len(self.data.enc_data)
+        self.corpus_stats()
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
@@ -184,7 +187,7 @@ class skipthought_model(object):
         s = ''
         for i in range(length):
             word = sentence[i]
-            s = s+self.reverse_dictionary[word]+' '
+            s = s+self.reverse_vocab[word]+' '
         return s
 
     def save_model(self, session, epoch):
@@ -203,12 +206,12 @@ class skipthought_model(object):
     def corpus_stats(self):
         print('\n~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         print('Corpus name:', self.data.corpus_name)
-        print('Vocabulary size:', len(self.sorted_dictionary))
-        print('Number of sentences:', self.corpus_length)
+        print('Vocabulary size:', len(self.sorted_vocab))
+        # print('Number of sentences:', self.corpus_length)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
 
     def evaluate(self, index = None):
-        i = index if index != None else np.random.permutation(len(self.data.enc_data))
+        i = index if index != None else np.random.randint(len(self.data.enc_data))
         print('\nOriginal sequence:\n')
         print(self.print_sentence(self.data.pre_data[i, 1:], self.data.pre_lengths[i]-1))
         print(self.print_sentence(self.data.enc_data[i], self.data.enc_lengths[i]))
@@ -241,8 +244,7 @@ class skipthought_model(object):
         encoded_sentences = self.sess.run([self.encoded_sentences], feed_dict=encode_dict)
         return np.array(encoded_sentences)
 
-    def train(self):
-
+    def initialise(self):
         # Save metadata for visualisation of embedding matrix
         # meta_data = sorted(self.dictionary, key=self.dictionary.get)
         # print(len(meta_data))
@@ -252,75 +254,70 @@ class skipthought_model(object):
 
         # Print summary statistics
         self.sess = tf.Session(graph = self.graph)
-        self.corpus_length = len(self.data.enc_data)
-        self.corpus_stats()
-
         # self.a= tf.contrib.graph_editor.get_tensors(self.graph)
-        train_loss_writer = tf.summary.FileWriter('./tensorboard/train_loss', self.sess.graph)
+        self.train_loss_writer = tf.summary.FileWriter('./tensorboard/train_loss', self.sess.graph)
         embedding_writer = tf.summary.FileWriter('./tensorboard/', self.sess.graph)
         config = projector.ProjectorConfig()
         embedding = config.embeddings.add()
         embedding.tensor_name = self.word_embeddings.name
         embedding.metadata_path = os.path.join('./meta_data.tsv')
         projector.visualize_embeddings(embedding_writer, config)
-        merged = tf.summary.merge_all()
+        self.merged = tf.summary.merge_all()
         print('\n~~~~~~~ Initializing variables ~~~~~~~\n')
         tf.global_variables_initializer().run(session = self.sess)
+
+    def train(self):
         print('\n~~~~~~~ Starting training ~~~~~~~\n')
         start_time = time.time()
         try:
             train_summaryIndex = -1
-            for epoch in range(self.para.num_epochs):
-                self.is_train = True
-                epoch_time = time.time()
-                print('----- Epoch', epoch, '-----')
-                print('Shuffling dataset')
-                perm = np.random.permutation(self.corpus_length)
-                enc_lengths_perm = self.data.enc_lengths[perm]
-                enc_data_perm = self.data.enc_data[perm]
-                post_lengths_perm = self.data.post_lengths[perm]
-                post_inputs_perm = np.array(self.data.post_data)[perm]
-                post_labels_perm = np.array(self.data.post_lab)[perm]
-                pre_lengths_perm = self.data.pre_lengths[perm]
-                pre_inputs_perm = np.array(self.data.pre_data)[perm]
-                pre_labels_perm = np.array(self.data.pre_lab)[perm]
+            self.is_train = True
+            perm = np.random.permutation(self.corpus_length)
+            enc_lengths_perm = self.data.enc_lengths[perm]
+            enc_data_perm = self.data.enc_data[perm]
+            post_lengths_perm = self.data.post_lengths[perm]
+            post_inputs_perm = np.array(self.data.post_data)[perm]
+            post_labels_perm = np.array(self.data.post_lab)[perm]
+            pre_lengths_perm = self.data.pre_lengths[perm]
+            pre_inputs_perm = np.array(self.data.pre_data)[perm]
+            pre_labels_perm = np.array(self.data.pre_lab)[perm]
 
-                total_loss = 0
-                predict_step = 5
+            total_loss = 0
+            predict_step = 5
 
-                for step in range(self.corpus_length // self.para.batch_size):
-                    begin = step * self.para.batch_size
-                    end = (step + 1) * self.para.batch_size
-                    batch_enc_lengths = enc_lengths_perm[begin : end]
-                    batch_enc_inputs = enc_data_perm[begin : end]
-                    batch_post_lengths = post_lengths_perm[begin : end]
-                    batch_post_inputs = post_inputs_perm[begin:end, :np.max(batch_post_lengths)]
-                    batch_post_labels = post_labels_perm[begin:end, :np.max(batch_post_lengths)]
-                    batch_pre_lengths = pre_lengths_perm[begin : end]
-                    batch_pre_inputs = pre_inputs_perm[begin:end, :np.max(batch_pre_lengths)]
-                    batch_pre_labels = pre_labels_perm[begin:end, :np.max(batch_pre_lengths)]
-                    train_dict = {self.sentences_lengths: batch_enc_lengths,
-                                self.sentences: batch_enc_inputs, 
-                                self.post_sentences_lengths: batch_post_lengths,
-                                self.post_inputs: batch_post_inputs,
-                                self.post_labels: batch_post_labels,
-                                self.pre_sentences_lengths: batch_pre_lengths,
-                                self.pre_inputs: batch_pre_inputs,
-                                self.pre_labels: batch_pre_labels}
-                    _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, merged], feed_dict=train_dict)
-                    train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size)*epoch)
-                    total_loss += loss_val
+            for step in range(self.corpus_length // self.para.batch_size):
+                begin = step * self.para.batch_size
+                end = (step + 1) * self.para.batch_size
+                batch_enc_lengths = enc_lengths_perm[begin : end]
+                batch_enc_inputs = enc_data_perm[begin : end]
+                batch_post_lengths = post_lengths_perm[begin : end]
+                batch_post_inputs = post_inputs_perm[begin:end, :np.max(batch_post_lengths)]
+                batch_post_labels = post_labels_perm[begin:end, :np.max(batch_post_lengths)]
+                batch_pre_lengths = pre_lengths_perm[begin : end]
+                batch_pre_inputs = pre_inputs_perm[begin:end, :np.max(batch_pre_lengths)]
+                batch_pre_labels = pre_labels_perm[begin:end, :np.max(batch_pre_lengths)]
+                train_dict = {self.sentences_lengths: batch_enc_lengths,
+                            self.sentences: batch_enc_inputs, 
+                            self.post_sentences_lengths: batch_post_lengths,
+                            self.post_inputs: batch_post_inputs,
+                            self.post_labels: batch_post_labels,
+                            self.pre_sentences_lengths: batch_pre_lengths,
+                            self.pre_inputs: batch_pre_inputs,
+                            self.pre_labels: batch_pre_labels}
+                _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
+                self.train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size))
+                total_loss += loss_val
 
-                    if self.global_step.eval(session = self.sess) % predict_step == 0:
-                        print("Average loss at step ", self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
-                        total_loss = 0
-                        end_time = time.time()
-                        print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
-                        start_time = time.time()
-                        self.evaluate(1)
-                        print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-                saver = tf.train.Saver()
-                saver.save(self.sess, os.path.join('./tensorboard/', 'model.ckpt'))
+                if self.global_step.eval(session = self.sess) % predict_step == 0:
+                    print("Average loss at step ", self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
+                    total_loss = 0
+                    end_time = time.time()
+                    print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
+                    start_time = time.time()
+                    self.evaluate()
+                    print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+            saver = tf.train.Saver()
+            saver.save(self.sess, os.path.join('./tensorboard/', 'model.ckpt'))
         except KeyboardInterrupt:
             save = input('save?')
             if 'y' in save:
@@ -352,9 +349,7 @@ def initialise(raw_txt_file, corpus_name):
     path = './corpus/'
     # for part in os.listdir('./corpus/toronto_corpus/a/'):
     #     i+=1
-    part = 'bp2.txt'
-        # tokenised_sentences = util.txt_to_sent(part)
-        # print('\nshit tokenised')
+    part = 'gingerbread.txt'
     data = skipthought_data(path + part, vocab, corpus_name, 20)
     print('created data')
     data.save(path,i)
@@ -362,27 +357,37 @@ def initialise(raw_txt_file, corpus_name):
 
 if __name__ == '__main__':
 
-    initialise('./corpus/gingerbread.txt', 'toronto')
+    # initialise('./corpus/gingerbread.txt', 'toronto')
 
-    # tf.reset_default_graph()
-    # corpus = 'gingerbread'
-    # with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
-    #     vocab = pkl.load(f)
-    # with open('./models/skipthought_' + corpus + '/data.pkl', 'rb') as f:
-    #     data = pkl.load(f)
+    tf.reset_default_graph()
+    corpus = 'toronto'
+    with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    with open('./models/skipthought_' + corpus + '/training_data/data_0.pkl', 'rb') as f:
+        data = pkl.load(f)
 
-    # paras = skipthought_para(embedding_size = 200, 
-    #     hidden_size = 200, 
-    #     hidden_layers = 2, 
-    #     batch_size = 32, 
-    #     keep_prob_dropout = 1.0, 
-    #     learning_rate = 0.005, 
-    #     bidirectional = False,
-    #     loss_function = 'softmax',
-    #     sampled_words = 500,
-    #     num_epochs = 100)
-    # model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
+    paras = skipthought_para(embedding_size = 500, 
+        hidden_size = 500, 
+        hidden_layers = 2, 
+        batch_size = 32, 
+        keep_prob_dropout = 1.0, 
+        learning_rate = 0.01, 
+        bidirectional = False,
+        loss_function = 'sampled_softmax',
+        sampled_words = 1000,
+        num_epochs = 1)
+    model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
+    model.initialise()
+    data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
+    num_epochs = 10
+    for epoch in range(num_epochs):
+        print('----- Epoch', epoch, '-----')
+        print('Shuffling dataset')
+        for part in data_parts:
+            with open(part, 'rb') as f:
+                data = pkl.load(f)
+            model.data = data
+            model.train()
 
-    # model.train()
     # model.load_model('./model/')
     # model.evaluate(1)
