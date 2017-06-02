@@ -114,6 +114,36 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
         # sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
         # return sentence_lengths, max_sent_len, enc_sentences
 
+def sick_encode(sentences, vocab, max_sent_len_=None):
+
+    '''
+    Encodes sentences using the vocabulary provided
+    '''
+
+    data_sentences = []
+    max_sent_len = -1
+    for sentence in sentences:
+        words = []
+        for word in sentence:
+            if word not in vocab:
+                token_id = vocab['<OOV>']
+            else:
+                token_id = vocab[word]
+            words.append(token_id)
+        if len(words) > max_sent_len:
+            max_sent_len = len(words)
+        data_sentences.append(words)
+    if max_sent_len_ is not None:
+        max_sent_len = max_sent_len_
+    enc_sentences = np.full([len(data_sentences), max_sent_len], vocab['<PAD>'], dtype=np.int32)
+    sentence_lengths = []
+    for i, sentence in enumerate(data_sentences):
+        sentence_lengths.append(len(sentence))
+        enc_sentences[i, 0:len(sentence)] = sentence
+    sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
+    return sentence_lengths, max_sent_len, enc_sentences
+
+
 def build_char_dictionary(text, vocab=None, max_sent_len_=None, max_word_len_=None):
 
     list_of_sentences = nltk.sent_tokenize(text)

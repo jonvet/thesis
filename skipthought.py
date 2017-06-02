@@ -14,29 +14,8 @@ import pandas as pd
 import pickle as pkl
 from collections import defaultdict
 
-class skipthought_data(object):
 
-    # Create datasets for encoder and decoders
-
-    def __init__(self, path, vocab, corpus_name, max_sent_len_=None): #enc_data, dec_data, dec_lab, sent_lengths):
-
-        sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(path, dictionary=vocab, max_sent_len=20, decoder=True)
-        self.enc_data = enc_data[1:-1]
-        self.enc_lengths = sent_lengths[1:-1] 
-        self.post_lengths = sent_lengths[2:] + 1
-        self.post_data = dec_data[2:]
-        self.post_lab = dec_lab[2:]
-        self.pre_lengths = sent_lengths[:-2] + 1
-        self.pre_data = dec_data[:-2]
-        self.pre_lab = dec_lab[:-2]
-        self.corpus_name = corpus_name
-        self.max_sent_len = max_sent_len
-
-    def save(self, path, i=0):
-        with open(path + 'data_%d.pkl' %i, 'wb') as f:
-            pkl.dump(self, f)
-
-class skipthought_para(object):
+class Skipthought_para(object):
 
     def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, num_epochs):
         self.embedding_size = embedding_size
@@ -50,7 +29,7 @@ class skipthought_para(object):
         self.sampled_words = sampled_words
         self.num_epochs = num_epochs
 
-class skipthought_model(object):
+class Skipthought_model(object):
 
     def __init__(self, data, vocab, parameters, path):
         self.data = data
@@ -190,11 +169,11 @@ class skipthought_model(object):
             s = s+self.reverse_vocab[word]+' '
         return s
 
-    def save_model(self, session, epoch):
-        if not os.path.exists('./model/'):
-            os.mkdir('./model/')
+    def save_model(self, path, epoch):
+        if not os.path.exists(path):
+            os.mkdir(path)
         saver = tf.train.Saver()
-        saver.save(session, './model/epoch_%d.checkpoint' % epoch)
+        saver.save(self.session, path + '/epoch_%d.checkpoint' % epoch)
 
     def load_model(self, path):
         self.sess = tf.Session(graph = self.graph)
@@ -317,52 +296,77 @@ class skipthought_model(object):
                     self.evaluate()
                     print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
             saver = tf.train.Saver()
-            saver.save(self.sess, os.path.join('./tensorboard/', 'model.ckpt'))
+            saver.save(os.path.join(self.path + '/tensorboard/', 'model.ckpt'))
         except KeyboardInterrupt:
             save = input('save?')
             if 'y' in save:
-                self.save_model(self.sess, 0)
+                self.save_model(self.path + '/saved_models/', 0)
 
-def initialise(raw_txt_file, corpus_name):
+def initialise(corpus_name, input_path='./corpus/toronto_corpus/'):
 
     '''
     Needs to be run only once.
-    This routine will save a skipthought_data and a vocab object.
+    This routine will create a vocabulary and skipthought data.
+    input_path should contain .txt files with tokenised sentences, one per line.
     '''
 
     path = './models/skipthought_' + corpus_name +'/'
+    output_path = './models/skipthought_' + corpus_name +'/training_data/'
+    parts = glob.glob(input_path + '*.txt')
+
     if not os.path.exists(path):
         os.makedirs(path)
-    # parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
-    # parts = ['./corpus/bp2.txt']
-    # with open('./corpus/ap1.txt.pkl', 'rb') as f:
-    #     vocab = pkl.load(f)
-    # vocab = defaultdict(int)
-    # for part in parts:
-    #     vocab = word_vocab(part, vocab_name =part, vocab=vocab)
-    #     print('\ncreated vocab')
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    
+    if os.path.isfile(path + 'vocab.pkl'):
+        with open('./models/skipthought_' + corpus_name + '/vocab.pkl', 'rb') as f:
+            vocab = pkl.load(f)
+        print('Vocab loaded')
+    else:
+        print('\nCreating vocab')
+        vocab = defaultdict(int)
+        for part in parts:
+            vocab = word_vocab(part, vocab_name=part, vocab=vocab)
+        with open(path + 'vocab.pkl', 'wb') as f:
+            pkl.dump(vocab, f)
+        print('\nVocab created')
 
+    print('\n%d files to be prepared:' % len(parts), parts)
     i = 0
-    with open('./models/skipthought_' + corpus_name + '/vocab.pkl', 'rb') as f:
-        vocab = pkl.load(f)
-
-    parts = ['./corpus/split/bp2test.txt']
     for part in parts:
-    # for part in glob.glob('./corpus/split/*.txt'):
-        data = skipthought_data(part, vocab, corpus_name, 20)
-        print('created data')
-        data.save(path + 'training_data/', i)
+        data = get_training_data(part, vocab, corpus_name, 20)
+        with open(path + 'training_data/data_%d.pkl' %i, 'wb') as f:
+            pkl.dump(data, f)
         i+=1
+
+def get_training_data(path, vocab, corpus_name, max_sent_len=20):
+
+    '''
+    Create datasets for encoder and decoders
+    '''
+
+    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
+    enc_lengths = sent_lengths[1:-1] 
+    enc_data = enc_data[1:-1]
+    post_lengths = sent_lengths[2:] + 1
+    post_data = dec_data[2:]
+    post_lab = dec_lab[2:]
+    pre_lengths = sent_lengths[:-2] + 1
+    pre_data = dec_data[:-2]
+    pre_lab = dec_lab[:-2]
+    return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
 
 def train():
     tf.reset_default_graph()
     corpus = 'toronto'
-    with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
+    path = './models/skipthought_' + corpus
+    with open(path + '/vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open('./models/skipthought_' + corpus + '/training_data/data_1.pkl', 'rb') as f:
+    with open(path + corpus + '/training_data/data_1.pkl', 'rb') as f:
         data = pkl.load(f)
 
-    paras = skipthought_para(embedding_size = 500, 
+    paras = Skipthought_para(embedding_size = 500, 
         hidden_size = 500, 
         hidden_layers = 2, 
         batch_size = 32, 
@@ -372,9 +376,12 @@ def train():
         loss_function = 'sampled_softmax',
         sampled_words = 1000,
         num_epochs = 1)
-    model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
+    with open(path + '/paras.pkl', 'wb') as f:
+        pkl.dump(paras, f)
+
+    model = Skipthought_model(data = data, vocab = vocab, parameters = paras, path = path)
     model.initialise()
-    data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
+    data_parts = glob.glob(path + '/training_data/*.pkl')
     num_epochs = 10
     for epoch in range(num_epochs):
         print('----- Epoch', epoch, '-----')
@@ -384,11 +391,12 @@ def train():
                 data = pkl.load(f)
             model.data = data
             model.train()
+        model.save_model(model.path + '/saved_models/', epoch)
 
 if __name__ == '__main__':
 
-    # initialise('./corpus/gingerbread.txt', 'toronto')
-    train()
+    initialise('toronto')
+    # train()
     
 
     # model.load_model('./model/')
