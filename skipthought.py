@@ -2,8 +2,8 @@ import tensorflow as tf
 import numpy as np
 import util
 from util import word_vocab
-from tensorflow.python.ops import variable_scope
-from tensorflow.contrib.tensorboard.plugins import projector
+# from tensorflow.python.ops import variable_scope
+# from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
 import os
@@ -342,17 +342,18 @@ def initialise(raw_txt_file, corpus_name):
     #     vocab = word_vocab(part, vocab_name =part, vocab=vocab)
     #     print('\ncreated vocab')
 
-    i = 0
+    i = 1
     with open('./models/skipthought_' + corpus_name + '/vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
 
+    parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
     path = './corpus/'
-    # for part in os.listdir('./corpus/toronto_corpus/a/'):
-    #     i+=1
-    part = 'gingerbread.txt'
-    data = skipthought_data(path + part, vocab, corpus_name, 20)
-    print('created data')
-    data.save(path,i)
+    for part in os.listdir('./corpus/split'):
+    # part = 'gingerbread.txt'
+        data = skipthought_data(part, vocab, corpus_name, 20)
+        print('created data')
+        data.save(path,i)
+        i+=1
 
 
 if __name__ == '__main__':
