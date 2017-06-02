@@ -3,7 +3,7 @@ import numpy as np
 import util
 from util import word_vocab
 # from tensorflow.python.ops import variable_scope
-# from tensorflow.contrib.tensorboard.plugins import projector
+from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
 import os
@@ -333,7 +333,7 @@ def initialise(raw_txt_file, corpus_name):
     path = './models/skipthought_' + corpus_name +'/'
     if not os.path.exists(path):
         os.makedirs(path)
-    parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
+    # parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
     # parts = ['./corpus/bp2.txt']
     # with open('./corpus/ap1.txt.pkl', 'rb') as f:
     #     vocab = pkl.load(f)
@@ -342,53 +342,54 @@ def initialise(raw_txt_file, corpus_name):
     #     vocab = word_vocab(part, vocab_name =part, vocab=vocab)
     #     print('\ncreated vocab')
 
-    i = 1
+    i = 0
     with open('./models/skipthought_' + corpus_name + '/vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
 
-    parts = ['./corpus/ap1.txt', './corpus/ap2.txt', './corpus/bp1.txt', './corpus/bp2.txt']
-    path = './corpus/'
-    for part in os.listdir('./corpus/split'):
-    # part = 'gingerbread.txt'
+    parts = ['./corpus/split/bp2test.txt']
+    for part in parts:
+    # for part in glob.glob('./corpus/split/*.txt'):
         data = skipthought_data(part, vocab, corpus_name, 20)
         print('created data')
-        data.save(path,i)
+        data.save(path + 'training_data/', i)
         i+=1
 
+def train():
+    tf.reset_default_graph()
+    corpus = 'toronto'
+    with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    with open('./models/skipthought_' + corpus + '/training_data/data_1.pkl', 'rb') as f:
+        data = pkl.load(f)
+
+    paras = skipthought_para(embedding_size = 500, 
+        hidden_size = 500, 
+        hidden_layers = 2, 
+        batch_size = 32, 
+        keep_prob_dropout = 1.0, 
+        learning_rate = 0.01, 
+        bidirectional = False,
+        loss_function = 'sampled_softmax',
+        sampled_words = 1000,
+        num_epochs = 1)
+    model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
+    model.initialise()
+    data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
+    num_epochs = 10
+    for epoch in range(num_epochs):
+        print('----- Epoch', epoch, '-----')
+        print('Shuffling dataset')
+        for part in data_parts:
+            with open(part, 'rb') as f:
+                data = pkl.load(f)
+            model.data = data
+            model.train()
 
 if __name__ == '__main__':
 
-    initialise('./corpus/gingerbread.txt', 'toronto')
-
-    # tf.reset_default_graph()
-    # corpus = 'toronto'
-    # with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
-    #     vocab = pkl.load(f)
-    # with open('./models/skipthought_' + corpus + '/training_data/data_0.pkl', 'rb') as f:
-    #     data = pkl.load(f)
-
-    # paras = skipthought_para(embedding_size = 500, 
-    #     hidden_size = 500, 
-    #     hidden_layers = 2, 
-    #     batch_size = 32, 
-    #     keep_prob_dropout = 1.0, 
-    #     learning_rate = 0.01, 
-    #     bidirectional = False,
-    #     loss_function = 'sampled_softmax',
-    #     sampled_words = 1000,
-    #     num_epochs = 1)
-    # model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
-    # model.initialise()
-    # data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
-    # num_epochs = 10
-    # for epoch in range(num_epochs):
-    #     print('----- Epoch', epoch, '-----')
-    #     print('Shuffling dataset')
-    #     for part in data_parts:
-    #         with open(part, 'rb') as f:
-    #             data = pkl.load(f)
-    #         model.data = data
-    #         model.train()
+    # initialise('./corpus/gingerbread.txt', 'toronto')
+    train()
+    
 
     # model.load_model('./model/')
     # model.evaluate(1)
