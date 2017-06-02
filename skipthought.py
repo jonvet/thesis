@@ -17,7 +17,7 @@ from collections import defaultdict
 
 class Skipthought_para(object):
 
-    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, num_epochs):
+    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -27,20 +27,19 @@ class Skipthought_para(object):
         self.bidirectional = bidirectional
         self.loss_function = loss_function
         self.sampled_words = sampled_words
-        self.num_epochs = num_epochs
 
 class Skipthought_model(object):
 
-    def __init__(self, data, vocab, parameters, path):
-        self.data = data
+    def __init__(self, data, vocab, parameters, path, epoch = 0):
+        self.corpus_name, self.max_sent_len, self.enc_lengths, self.enc_data, self.post_lengths, self.post_data, self.post_lab, self.pre_lengths, self.pre_data, self.pre_lab = data
         self.para = parameters
         self.vocab = vocab
         self.reverse_vocab = dict(zip(self.vocab.values(), self.vocab.keys()))
         self.sorted_vocab = sorted(self.vocab.items(), key=operator.itemgetter(1))
         self.vocabulary_size = len(self.sorted_vocab)
         self.path = path
-        self.corpus_length = len(self.data.enc_data)
-        self.corpus_stats()
+        self.corpus_length = len(self.enc_data)
+        self.epoch = epoch
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
@@ -145,7 +144,7 @@ class Skipthought_model(object):
             with tf.variable_scope(name, reuse = True) as varscope:
                 output_fn = lambda x: tf.nn.softmax(tf.matmul(x, W) + b)
                 dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(output_fn =output_fn, encoder_state = encoder_state, 
-                    embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.data.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
+                    embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
                 logits_inference, state_inference,_ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_inference, scope = varscope)
                 return tf.arg_max(logits_inference, 2)
 
@@ -184,25 +183,25 @@ class Skipthought_model(object):
 
     def corpus_stats(self):
         print('\n~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-        print('Corpus name:', self.data.corpus_name)
+        print('Corpus name:', self.corpus_name)
         print('Vocabulary size:', len(self.sorted_vocab))
         # print('Number of sentences:', self.corpus_length)
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
 
     def evaluate(self, index = None):
-        i = index if index != None else np.random.randint(len(self.data.enc_data))
+        i = index if index != None else np.random.randint(len(self.enc_data))
         print('\nOriginal sequence:\n')
-        print(self.print_sentence(self.data.pre_data[i, 1:], self.data.pre_lengths[i]-1))
-        print(self.print_sentence(self.data.enc_data[i], self.data.enc_lengths[i]))
-        print(self.print_sentence(self.data.post_data[i, 1:], self.data.post_lengths[i]-1))
-        test_enc_lengths = np.expand_dims(self.data.enc_lengths[i], 0)
-        test_enc_inputs = np.expand_dims(self.data.enc_data[i], 0)
-        test_post_lengths = np.expand_dims(self.data.post_lengths[i], 0)
-        test_post_inputs = np.expand_dims(self.data.post_data[i], 0)
-        test_post_labels = np.expand_dims(self.data.post_lab[i], 0)
-        test_pre_lengths = np.expand_dims(self.data.pre_lengths[i], 0)
-        test_pre_inputs = np.expand_dims(self.data.pre_data[i], 0)
-        test_pre_labels = np.expand_dims(self.data.pre_lab[i], 0)
+        print(self.print_sentence(self.pre_data[i, 1:], self.pre_lengths[i]-1))
+        print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
+        print(self.print_sentence(self.post_data[i, 1:], self.post_lengths[i]-1))
+        test_enc_lengths = np.expand_dims(self.enc_lengths[i], 0)
+        test_enc_inputs = np.expand_dims(self.enc_data[i], 0)
+        test_post_lengths = np.expand_dims(self.post_lengths[i], 0)
+        test_post_inputs = np.expand_dims(self.post_data[i], 0)
+        test_post_labels = np.expand_dims(self.post_lab[i], 0)
+        test_pre_lengths = np.expand_dims(self.pre_lengths[i], 0)
+        test_pre_inputs = np.expand_dims(self.pre_data[i], 0)
+        test_pre_labels = np.expand_dims(self.pre_lab[i], 0)
         test_dict = {self.sentences_lengths: test_enc_lengths,
                     self.sentences: test_enc_inputs, 
                     self.post_sentences_lengths: test_post_lengths,
@@ -214,7 +213,7 @@ class Skipthought_model(object):
         pre_prediction, post_prediction = self.sess.run([self.predict], feed_dict=test_dict)[0]
         print('\nPredicted previous and following sequence around original sentence:\n')
         print(self.print_sentence(pre_prediction[0], len(pre_prediction[0])))
-        print(self.print_sentence(self.data.enc_data[i], self.data.enc_lengths[i]))
+        print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
         print(self.print_sentence(post_prediction[0], len(post_prediction[0])))
 
     def encode(self, sentences, lengths):
@@ -252,19 +251,19 @@ class Skipthought_model(object):
             train_summaryIndex = -1
             self.is_train = True
             perm = np.random.permutation(self.corpus_length)
-            enc_lengths_perm = self.data.enc_lengths[perm]
-            enc_data_perm = self.data.enc_data[perm]
-            post_lengths_perm = self.data.post_lengths[perm]
-            post_inputs_perm = np.array(self.data.post_data)[perm]
-            post_labels_perm = np.array(self.data.post_lab)[perm]
-            pre_lengths_perm = self.data.pre_lengths[perm]
-            pre_inputs_perm = np.array(self.data.pre_data)[perm]
-            pre_labels_perm = np.array(self.data.pre_lab)[perm]
+            enc_lengths_perm = self.enc_lengths[perm]
+            enc_data_perm = self.enc_data[perm]
+            post_lengths_perm = self.post_lengths[perm]
+            post_inputs_perm = np.array(self.post_data)[perm]
+            post_labels_perm = np.array(self.post_lab)[perm]
+            pre_lengths_perm = self.pre_lengths[perm]
+            pre_inputs_perm = np.array(self.pre_data)[perm]
+            pre_labels_perm = np.array(self.pre_lab)[perm]
 
             total_loss = 0
-            predict_step = 5
-
-            for step in range(self.corpus_length // self.para.batch_size):
+            predict_step = 100
+            n_steps = self.corpus_length // self.para.batch_size
+            for step in range(n_steps):
                 begin = step * self.para.batch_size
                 end = (step + 1) * self.para.batch_size
                 batch_enc_lengths = enc_lengths_perm[begin : end]
@@ -288,7 +287,7 @@ class Skipthought_model(object):
                 total_loss += loss_val
 
                 if self.global_step.eval(session = self.sess) % predict_step == 0:
-                    print("Average loss at step ", self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
+                    print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
                     total_loss = 0
                     end_time = time.time()
                     print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
@@ -359,23 +358,21 @@ def get_training_data(path, vocab, corpus_name, max_sent_len=20):
 
 def train():
     tf.reset_default_graph()
-    corpus = 'toronto'
-    path = './models/skipthought_' + corpus
+    path = './models/skipthought_toronto'
     with open(path + '/vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open(path + corpus + '/training_data/data_1.pkl', 'rb') as f:
+    with open(path + '/training_data/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
 
-    paras = Skipthought_para(embedding_size = 500, 
-        hidden_size = 500, 
+    paras = Skipthought_para(embedding_size = 1000, 
+        hidden_size = 1000, 
         hidden_layers = 2, 
-        batch_size = 32, 
+        batch_size = 128, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.01, 
-        bidirectional = False,
+        learning_rate = 0.005, 
+        bidirectional = True,
         loss_function = 'sampled_softmax',
-        sampled_words = 1000,
-        num_epochs = 1)
+        sampled_words = 1000)
     with open(path + '/paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
 
@@ -389,14 +386,15 @@ def train():
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
-            model.data = data
+            model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
             model.train()
+        model.epoch += 1
         model.save_model(model.path + '/saved_models/', epoch)
 
 if __name__ == '__main__':
 
-    initialise('toronto')
-    # train()
+    # initialise('toronto')
+    train()
     
 
     # model.load_model('./model/')
