@@ -358,37 +358,37 @@ def initialise(raw_txt_file, corpus_name):
 
 if __name__ == '__main__':
 
-    # initialise('./corpus/gingerbread.txt', 'toronto')
+    initialise('./corpus/gingerbread.txt', 'toronto')
 
-    tf.reset_default_graph()
-    corpus = 'toronto'
-    with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
-        vocab = pkl.load(f)
-    with open('./models/skipthought_' + corpus + '/training_data/data_0.pkl', 'rb') as f:
-        data = pkl.load(f)
+    # tf.reset_default_graph()
+    # corpus = 'toronto'
+    # with open('./models/skipthought_' + corpus + '/vocab.pkl', 'rb') as f:
+    #     vocab = pkl.load(f)
+    # with open('./models/skipthought_' + corpus + '/training_data/data_0.pkl', 'rb') as f:
+    #     data = pkl.load(f)
 
-    paras = skipthought_para(embedding_size = 500, 
-        hidden_size = 500, 
-        hidden_layers = 2, 
-        batch_size = 32, 
-        keep_prob_dropout = 1.0, 
-        learning_rate = 0.01, 
-        bidirectional = False,
-        loss_function = 'sampled_softmax',
-        sampled_words = 1000,
-        num_epochs = 1)
-    model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
-    model.initialise()
-    data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
-    num_epochs = 10
-    for epoch in range(num_epochs):
-        print('----- Epoch', epoch, '-----')
-        print('Shuffling dataset')
-        for part in data_parts:
-            with open(part, 'rb') as f:
-                data = pkl.load(f)
-            model.data = data
-            model.train()
+    # paras = skipthought_para(embedding_size = 500, 
+    #     hidden_size = 500, 
+    #     hidden_layers = 2, 
+    #     batch_size = 32, 
+    #     keep_prob_dropout = 1.0, 
+    #     learning_rate = 0.01, 
+    #     bidirectional = False,
+    #     loss_function = 'sampled_softmax',
+    #     sampled_words = 1000,
+    #     num_epochs = 1)
+    # model = skipthought_model(data = data, vocab = vocab, parameters = paras, path = './models/skipthought_' + corpus)
+    # model.initialise()
+    # data_parts = glob.glob('./models/skipthought_toronto/training_data/*.pkl')
+    # num_epochs = 10
+    # for epoch in range(num_epochs):
+    #     print('----- Epoch', epoch, '-----')
+    #     print('Shuffling dataset')
+    #     for part in data_parts:
+    #         with open(part, 'rb') as f:
+    #             data = pkl.load(f)
+    #         model.data = data
+    #         model.train()
 
     # model.load_model('./model/')
     # model.evaluate(1)
