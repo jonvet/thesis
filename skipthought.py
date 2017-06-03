@@ -172,7 +172,7 @@ class Skipthought_model(object):
         if not os.path.exists(path):
             os.mkdir(path)
         saver = tf.train.Saver()
-        saver.save(self.session, path + '/epoch_%d.checkpoint' % epoch)
+        saver.save(self.sess, path + '/epoch_%d.checkpoint' % epoch)
 
     def load_model(self, path):
         self.sess = tf.Session(graph = self.graph)
@@ -294,8 +294,6 @@ class Skipthought_model(object):
                     start_time = time.time()
                     self.evaluate()
                     print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-            saver = tf.train.Saver()
-            saver.save(os.path.join(self.path + '/tensorboard/', 'model.ckpt'))
         except KeyboardInterrupt:
             save = input('save?')
             if 'y' in save:
@@ -370,7 +368,7 @@ def train():
         batch_size = 128, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.005, 
-        bidirectional = True,
+        bidirectional = False,
         loss_function = 'sampled_softmax',
         sampled_words = 1000)
     with open(path + '/paras.pkl', 'wb') as f:
