@@ -43,7 +43,8 @@ class Skipthought_model(object):
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
-        self.initializer = tf.random_normal_initializer()
+        # self.initializer = tf.random_normal_initializer()
+        self.initializer = tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32)
 
         # Variables
         self.word_embeddings = tf.get_variable('embeddings', [self.vocabulary_size, self.para.embedding_size], tf.float32, initializer = self.initializer)
@@ -93,7 +94,7 @@ class Skipthought_model(object):
 
         self.loss = pre_loss + post_loss
         self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.para.learning_rate, 
-            optimizer = 'Adam', clip_gradients=2.0, learning_rate_decay_fn=None, summaries = ['loss']) 
+            optimizer = 'Adam', clip_gradients=10.0, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
         pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
