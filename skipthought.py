@@ -38,7 +38,6 @@ class Skipthought_model(object):
         self.sorted_vocab = sorted(self.vocab.items(), key=operator.itemgetter(1))
         self.vocabulary_size = len(self.sorted_vocab)
         self.path = path
-        self.corpus_length = len(self.enc_data)
         self.epoch = epoch
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
@@ -251,6 +250,7 @@ class Skipthought_model(object):
         try:
             train_summaryIndex = -1
             self.is_train = True
+            self.corpus_length = len(self.enc_data)
             perm = np.random.permutation(self.corpus_length)
             enc_lengths_perm = self.enc_lengths[perm]
             enc_data_perm = self.enc_data[perm]
@@ -368,7 +368,7 @@ def train():
         hidden_layers = 2, 
         batch_size = 128, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.005, 
+        learning_rate = 0.0005, 
         bidirectional = False,
         loss_function = 'sampled_softmax',
         sampled_words = 1000)
