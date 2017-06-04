@@ -17,7 +17,7 @@ from collections import defaultdict
 
 class Skipthought_para(object):
 
-    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words):
+    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, decay_steps, decay):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -27,6 +27,8 @@ class Skipthought_para(object):
         self.bidirectional = bidirectional
         self.loss_function = loss_function
         self.sampled_words = sampled_words
+        self.decay_steps = decay_steps
+        self.decay = decay
 
 class Skipthought_model(object):
 
@@ -92,7 +94,8 @@ class Skipthought_model(object):
             pre_loss = self.get_sampled_softmax_loss(self.pre_labels, pre_logits, name='precoder') 
 
         self.loss = pre_loss + post_loss
-        self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.para.learning_rate, 
+        self.eta = tf.train.exponential_decay(self.para.learning_rate, self.global_step, self.para.decay_steps, self.para.decay, staircase=True)
+        self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.eta, 
             optimizer = 'Adam', clip_gradients=10.0, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
@@ -369,9 +372,11 @@ def train():
         batch_size = 128, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0005, 
-        bidirectional = False,
+        bidirectional = True,
         loss_function = 'sampled_softmax',
-        sampled_words = 1000)
+        sampled_words = 1000,
+        decay_steps = 10000,
+        decay = 0.99)
     with open(path + '/paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
 
