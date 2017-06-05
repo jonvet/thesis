@@ -291,7 +291,7 @@ class Skipthought_model(object):
 
                 if self.global_step.eval(session = self.sess) % predict_step == 0:
                     print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
-                    print('Learning rate: %0.6f' % self.eta)
+                    print('Learning rate: %0.6f' % self.eta.eval(session = self.sess))
                     total_loss = 0
                     end_time = time.time()
                     print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
