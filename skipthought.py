@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 import util
 from util import word_vocab
-# from tensorflow.python.ops import variable_scope
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
@@ -292,6 +291,7 @@ class Skipthought_model(object):
 
                 if self.global_step.eval(session = self.sess) % predict_step == 0:
                     print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
+                    print('Learning rate: %0.6f' % self.eta)
                     total_loss = 0
                     end_time = time.time()
                     print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
@@ -370,12 +370,12 @@ def train():
         hidden_size = 1000, 
         hidden_layers = 2, 
         batch_size = 128, 
-        keep_prob_dropout = 1.0, 
+        keep_prob_dropout = 0.8, 
         learning_rate = 0.0005, 
         bidirectional = True,
         loss_function = 'sampled_softmax',
         sampled_words = 1000,
-        decay_steps = 10000,
+        decay_steps = 100000,
         decay = 0.99)
     with open(path + '/paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
