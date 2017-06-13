@@ -140,7 +140,7 @@ class Skipthought_model(object):
             with tf.variable_scope(name) as varscope:
                 dynamic_fn_train = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
                 outputs_train, state_train, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_train, 
-                    inputs=decoder_inputs, sequence_length = lengths, scope = varscope)
+                    inputs = decoder_inputs, sequence_length = lengths, scope = varscope)
                 logits = tf.reshape(outputs_train, [-1, self.para.embedding_size])
                 logits_train = tf.matmul(logits, W) + b
                 logits_projected = tf.reshape(logits_train, [self.para.batch_size, tf.reduce_max(lengths), self.vocabulary_size])
@@ -176,14 +176,14 @@ class Skipthought_model(object):
     def save_model(self, path, epoch):
         if not os.path.exists(path):
             os.mkdir(path)
-        saver = tf.train.Saver()
-        saver.save(self.sess, path + '/epoch_%d.checkpoint' % epoch)
+        self.saver.save(sess = self.sess, save_path = path + '/epoch_%d' % epoch, write_state = False)
 
     def load_model(self, path):
         self.sess = tf.Session(graph = self.graph)
         saver = tf.train.Saver()
-        logdir = tf.train.latest_checkpoint(path)
-        saver.restore(self.sess, logdir)
+        # logdir = tf.train.latest_checkpoint(path)
+        # saver.restore(self.sess, logdir)
+        saver.restore(self.sess, path + '/saved_models/' + 'epoch_9.index')
         print('Model restored')
 
     def corpus_stats(self):
@@ -246,6 +246,7 @@ class Skipthought_model(object):
         embedding.metadata_path = os.path.join('./meta_data.tsv')
         projector.visualize_embeddings(embedding_writer, config)
         self.merged = tf.summary.merge_all()
+        self.saver = tf.train.Saver()
         print('\n~~~~~~~ Initializing variables ~~~~~~~\n')
         tf.global_variables_initializer().run(session = self.sess)
         self.total_loss = 0
@@ -290,21 +291,21 @@ class Skipthought_model(object):
                 _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
                 self.train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size))
                 self.total_loss += loss_val
-                if self.global_step.eval(session = self.sess) % self.predict_step == 0:
-                    print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", self.total_loss/self.predict_step)
+                if self.global_step.eval(session = self.sess) % self.para.predict_step == 0:
+                    print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", self.total_loss/self.para.predict_step)
                     print('Learning rate: %0.6f' % self.eta.eval(session = self.sess))
                     self.total_loss = 0
                     end_time = time.time()
-                    print('\nTime for %d steps: %0.2f seconds' % (self.predict_step, end_time - start_time))
+                    print('\nTime for %d steps: %0.2f seconds' % (self.para.predict_step, end_time - start_time))
                     start_time = time.time()
                     self.evaluate()
                     print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
         except KeyboardInterrupt:
             save = input('save?')
             if 'y' in save:
-                self.save_model(self.path + '/saved_models/', 0)
+                self.save_model(self.path + '/saved_models/', self.epoch)
 
-def initialise(corpus_name, input_path, vocab_size, max_sent_len):
+def preprocess(corpus_name, input_path, vocab_size, max_sent_len):
 
     '''
     Needs to be run only once.
@@ -330,7 +331,7 @@ def initialise(corpus_name, input_path, vocab_size, max_sent_len):
         print('\n%d files to be processed:' % len(parts), parts)
         vocab = defaultdict(int)
         for part in parts:
-            print('Processing file:', part)
+            print('\nProcessing file:', part)
             vocab = word_vocab(part, vocab_name=part, vocab=vocab)
         vocab = finalise_vocab(vocab, vocab_size)
         with open(path + 'vocab.pkl', 'wb') as f:
@@ -341,7 +342,7 @@ def initialise(corpus_name, input_path, vocab_size, max_sent_len):
     print('\n%d files to be processed:' % len(parts), parts)
     i = 0
     for part in parts:
-        print('Processing file:', part)
+        print('\nProcessing file:', part)
         data = get_training_data(part, vocab, corpus_name, max_sent_len)
         with open(path + 'training_data/data_%d.pkl' %i, 'wb') as f:
             pkl.dump(data, f)
@@ -366,16 +367,9 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
 
 def train(path):
-    # initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 1000, max_sent_len=20)
-    # path = './models/skipthought_gingerbread/'
     tf.reset_default_graph()
     if not os.path.exists(path):
         os.makedirs(path)
-    with open(path + 'vocab.pkl', 'rb') as f:
-        vocab = pkl.load(f)
-    with open(path + 'training_data/data_0.pkl', 'rb') as f:
-        data = pkl.load(f)
-
     paras = Skipthought_para(embedding_size = 1000, 
         hidden_size = 1000, 
         hidden_layers = 2, 
@@ -383,13 +377,18 @@ def train(path):
         keep_prob_dropout = 1.0, 
         learning_rate = 0.01, 
         bidirectional = True,
-        loss_function = 'sample_softmax',
+        loss_function = 'sampled_softmax',
         sampled_words = 25,
         decay_steps = 100000,
         decay = 0.99,
         predict_step = 100)
+
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
+    with open(path + 'vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    with open(path + 'training_data/data_0.pkl', 'rb') as f:
+        data = pkl.load(f)
 
     model = Skipthought_model(data = data, vocab = vocab, parameters = paras, path = path)
     model.initialise()
@@ -405,16 +404,27 @@ def train(path):
             model.train()
         model.save_model(model.path + '/saved_models/', epoch)
         model.epoch += 1
-        
+
+def test(path):
+    tf.reset_default_graph()
+    if not os.path.exists(path):
+        os.makedirs(path)
+    with open(path + 'paras.pkl', 'rb') as f:
+        paras = pkl.load(f)
+    with open(path + 'vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    with open(path + 'training_data/data_0.pkl', 'rb') as f:
+        data = pkl.load(f)
+    model = Skipthought_model(data = data, vocab = vocab, parameters = paras, path = path)
 
 if __name__ == '__main__':
 
-    initialise('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=25)
-    train('./models/skipthought_toronto')
+    # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=25)
+    train('./models/skipthought_toronto/')
 
-    # initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=25)
-    # train('./models/skipthought_gingerbread')
+    # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=25)
+    # train('./models/skipthought_gingerbread/')
     
 
-    # model.load_model('./model/')
+    # model.load_model()
     # model.evaluate(1)
