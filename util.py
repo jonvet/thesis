@@ -89,7 +89,7 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
     with open(path, 'r') as f:
         for line in f:
             lines += 1
-    print('%d lines to do\n' % lines)
+    print('\n%d lines to do\n' % lines)
 
     if decoder:
         enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)

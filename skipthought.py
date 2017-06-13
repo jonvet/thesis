@@ -327,21 +327,26 @@ def initialise(corpus_name, input_path, vocab_size, max_sent_len):
         print('Vocab loaded')
     else:
         print('\nCreating vocab')
+        print('\n%d files to be processed:' % len(parts), parts)
         vocab = defaultdict(int)
         for part in parts:
+            print('Processing file:', part)
             vocab = word_vocab(part, vocab_name=part, vocab=vocab)
         vocab = finalise_vocab(vocab, vocab_size)
         with open(path + 'vocab.pkl', 'wb') as f:
             pkl.dump(vocab, f)
         print('\nVocab created')
 
-    print('\n%d files to be prepared:' % len(parts), parts)
+    print('\nCreating training data')
+    print('\n%d files to be processed:' % len(parts), parts)
     i = 0
     for part in parts:
+        print('Processing file:', part)
         data = get_training_data(part, vocab, corpus_name, max_sent_len)
         with open(path + 'training_data/data_%d.pkl' %i, 'wb') as f:
             pkl.dump(data, f)
         i+=1
+    print('\nTraining data created')
 
 def get_training_data(path, vocab, corpus_name, max_sent_len):
 
@@ -361,8 +366,8 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
 
 def train(path):
-    initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 1000, max_sent_len=20)
-    path = './models/skipthought_gingerbread/'
+    # initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 1000, max_sent_len=20)
+    # path = './models/skipthought_gingerbread/'
     tf.reset_default_graph()
     if not os.path.exists(path):
         os.makedirs(path)
