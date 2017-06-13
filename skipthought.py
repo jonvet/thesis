@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import util
 from util import word_vocab
+from util import sent_to_int
+from util import finalise_vocab
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
@@ -16,7 +18,7 @@ from collections import defaultdict
 
 class Skipthought_para(object):
 
-    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, decay_steps, decay):
+    def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -28,6 +30,7 @@ class Skipthought_para(object):
         self.sampled_words = sampled_words
         self.decay_steps = decay_steps
         self.decay = decay
+        self.predict_step = predict_step
 
 class Skipthought_model(object):
 
@@ -43,8 +46,8 @@ class Skipthought_model(object):
         
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
-        # self.initializer = tf.random_normal_initializer()
-        self.initializer = tf.contrib.layers.xavier_initializer(uniform=True, seed=None, dtype=tf.float32)
+        self.initializer = tf.random_normal_initializer()
+        # self.initializer = tf.contrib.layers.xavier_initializer(uniform=False, seed=None, dtype=tf.float32)
 
         # Variables
         self.word_embeddings = tf.get_variable('embeddings', [self.vocabulary_size, self.para.embedding_size], tf.float32, initializer = self.initializer)
@@ -245,9 +248,9 @@ class Skipthought_model(object):
         self.merged = tf.summary.merge_all()
         print('\n~~~~~~~ Initializing variables ~~~~~~~\n')
         tf.global_variables_initializer().run(session = self.sess)
+        self.total_loss = 0
 
     def train(self):
-        print('\n~~~~~~~ Starting training ~~~~~~~\n')
         start_time = time.time()
         try:
             train_summaryIndex = -1
@@ -263,8 +266,7 @@ class Skipthought_model(object):
             pre_inputs_perm = np.array(self.pre_data)[perm]
             pre_labels_perm = np.array(self.pre_lab)[perm]
 
-            total_loss = 0
-            predict_step = 100
+            
             n_steps = self.corpus_length // self.para.batch_size
             for step in range(n_steps):
                 begin = step * self.para.batch_size
@@ -287,14 +289,13 @@ class Skipthought_model(object):
                             self.pre_labels: batch_pre_labels}
                 _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
                 self.train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size))
-                total_loss += loss_val
-
-                if self.global_step.eval(session = self.sess) % predict_step == 0:
-                    print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", total_loss/predict_step)
+                self.total_loss += loss_val
+                if self.global_step.eval(session = self.sess) % self.predict_step == 0:
+                    print("Average loss at epoch %d step" %self.epoch, self.global_step.eval(session = self.sess), ": ", self.total_loss/self.predict_step)
                     print('Learning rate: %0.6f' % self.eta.eval(session = self.sess))
-                    total_loss = 0
+                    self.total_loss = 0
                     end_time = time.time()
-                    print('\nTime for %d steps: %0.2f seconds' % (predict_step, end_time - start_time))
+                    print('\nTime for %d steps: %0.2f seconds' % (self.predict_step, end_time - start_time))
                     start_time = time.time()
                     self.evaluate()
                     print('\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
@@ -303,7 +304,7 @@ class Skipthought_model(object):
             if 'y' in save:
                 self.save_model(self.path + '/saved_models/', 0)
 
-def initialise(corpus_name, input_path='./corpus/toronto_corpus/'):
+def initialise(corpus_name, input_path, vocab_size, max_sent_len):
 
     '''
     Needs to be run only once.
@@ -329,6 +330,7 @@ def initialise(corpus_name, input_path='./corpus/toronto_corpus/'):
         vocab = defaultdict(int)
         for part in parts:
             vocab = word_vocab(part, vocab_name=part, vocab=vocab)
+        vocab = finalise_vocab(vocab, vocab_size)
         with open(path + 'vocab.pkl', 'wb') as f:
             pkl.dump(vocab, f)
         print('\nVocab created')
@@ -336,18 +338,18 @@ def initialise(corpus_name, input_path='./corpus/toronto_corpus/'):
     print('\n%d files to be prepared:' % len(parts), parts)
     i = 0
     for part in parts:
-        data = get_training_data(part, vocab, corpus_name, 20)
+        data = get_training_data(part, vocab, corpus_name, max_sent_len)
         with open(path + 'training_data/data_%d.pkl' %i, 'wb') as f:
             pkl.dump(data, f)
         i+=1
 
-def get_training_data(path, vocab, corpus_name, max_sent_len=20):
+def get_training_data(path, vocab, corpus_name, max_sent_len):
 
     '''
     Create datasets for encoder and decoders
     '''
 
-    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = util.sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
+    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
     enc_lengths = sent_lengths[1:-1] 
     enc_data = enc_data[1:-1]
     post_lengths = sent_lengths[2:] + 1
@@ -358,47 +360,55 @@ def get_training_data(path, vocab, corpus_name, max_sent_len=20):
     pre_lab = dec_lab[:-2]
     return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
 
-def train():
+def train(path):
+    initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 1000, max_sent_len=20)
+    path = './models/skipthought_gingerbread/'
     tf.reset_default_graph()
-    path = './models/skipthought_toronto'
-    with open(path + '/vocab.pkl', 'rb') as f:
+    if not os.path.exists(path):
+        os.makedirs(path)
+    with open(path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open(path + '/training_data/data_0.pkl', 'rb') as f:
+    with open(path + 'training_data/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
 
     paras = Skipthought_para(embedding_size = 1000, 
         hidden_size = 1000, 
         hidden_layers = 2, 
-        batch_size = 128, 
-        keep_prob_dropout = 0.8, 
-        learning_rate = 0.0005, 
+        batch_size = 256, 
+        keep_prob_dropout = 1.0, 
+        learning_rate = 0.01, 
         bidirectional = True,
-        loss_function = 'sampled_softmax',
-        sampled_words = 1000,
+        loss_function = 'sample_softmax',
+        sampled_words = 25,
         decay_steps = 100000,
-        decay = 0.99)
-    with open(path + '/paras.pkl', 'wb') as f:
+        decay = 0.99,
+        predict_step = 100)
+    with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
 
     model = Skipthought_model(data = data, vocab = vocab, parameters = paras, path = path)
     model.initialise()
-    data_parts = glob.glob(path + '/training_data/*.pkl')
-    num_epochs = 10
+    data_parts = glob.glob(path + 'training_data/*.pkl')
+    num_epochs = 1000
     for epoch in range(num_epochs):
+        print('\n~~~~~~~ Starting training ~~~~~~~\n')
         print('----- Epoch', epoch, '-----')
-        print('Shuffling dataset')
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
             model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
             model.train()
-        model.epoch += 1
         model.save_model(model.path + '/saved_models/', epoch)
+        model.epoch += 1
+        
 
 if __name__ == '__main__':
 
-    # initialise('toronto')
-    train()
+    initialise('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=25)
+    train('./models/skipthought_toronto')
+
+    # initialise('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=25)
+    # train('./models/skipthought_gingerbread')
     
 
     # model.load_model('./model/')

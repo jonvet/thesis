@@ -4,6 +4,8 @@ import numpy as np
 import operator
 import pickle as pkl
 from collections import defaultdict
+import os
+import glob
 
 def word_vocab(path, vocab_name=None, vocab=None):
 
@@ -17,26 +19,43 @@ def word_vocab(path, vocab_name=None, vocab=None):
             this_sentence = sentence.split()
             for word in this_sentence:
                 vocab[word] += 1
-    with open(vocab_name + '.pkl', 'wb') as f:
-        pkl.dump(vocab, f)
     return vocab
 
-def finalise_vocab(path, source, target, target_size):
-    with open(path + source, 'rb') as f:
-        raw_vocab = pkl.load(f)
+def finalise_vocab(raw_vocab, vocab_size):
+
+    '''
+    Takes as input a dictionary of unique words that occur in a corpus.
+    Returns a sorted dictionary of size vocab_size with unique values.
+    '''
+
     sorted_vocab = sorted(raw_vocab.items(), key=operator.itemgetter(1))
     sorted_vocab = sorted_vocab[-vocab_size:]
-    final_dict = {'<PAD>': 0, '<OOV>': 1, '<GO>': 2, '<END>': 3}
+    final_vocab = {'<PAD>': 0, '<OOV>': 1, '<GO>': 2, '<END>': 3}
     for word in sorted_vocab:
-        final_dict[word[0]] = len(final_dict)
-    with open(path + target, 'wb') as f:
-        pkl.dump(final_dict, f)
+        final_vocab[word[0]] = len(final_vocab)
+    return final_vocab
+
+def txt_to_row(path = './corpus/gingerbread_corpus/rows/'):
+
+    '''
+    Takes as input a text file and outputs a text file with each sentence on a separate row
+    '''
+
+    temp_parts = glob.glob(path + '*.txt')
+    for part in temp_parts:
+        with open(part, 'r') as f:
+            data = f.read().replace('\n', ' ')
+        sentences = nltk.sent_tokenize(data)
+        with open(part[:-4] + '_rows.txt', 'w') as f:
+            for sentence in sentences:
+                f.write('%s\n' % sentence.lower())
+
 
 def txt_to_sent(path):
 
     '''
     Imports and tokenises a corpus.
-    Outputs a list of sentences, where each sentence is itself a list of words
+    Returns a list of sentences, where each sentence is itself a list of words
     '''
 
     sentences = []
@@ -67,8 +86,6 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
     '''
 
     lines = 0
-    # if max_sent_len_ is not None:
-    #     max_sent_len = max_sent_len_
     with open(path, 'r') as f:
         for line in f:
             lines += 1
@@ -83,36 +100,47 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
         enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
         sentence_lengths = []
 
-
     i = 0
-    print('\nSTART')
-    with open(path, 'r') as f:
-        for sent in f:
-            print('\rSentence %d' %i, end='')
-            sentence = sent.split()
-            words = []
-            for word in sentence:
-                if word not in dictionary:
-                    token_id = dictionary['<OOV>']
-                else:
-                    token_id = dictionary[word]
-                words.append(token_id)
-            sentence_lengths[i] = min(len(sentence),max_sent_len)
-            enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
-            dec_go_sentences[i, 0] = dictionary['<GO>']
-            dec_go_sentences[i, 1:min(len(sentence),max_sent_len)+1] = words[:min(len(sentence),max_sent_len)]
-            dec_go_sentences[i, min(len(sentence),max_sent_len)+1] = dictionary['<END>']
-            dec_end_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
-            dec_end_sentences[i, min(len(sentence),max_sent_len)] = dictionary['<END>']
-            i += 1
+    if decoder:
+        with open(path, 'r') as f:
+            for sent in f:
+                print('\rSentence %d' %i, end='')
+                sentence = sent.split()
+                words = []
+                for word in sentence:
+                    if word not in dictionary:
+                        token_id = dictionary['<OOV>']
+                    else:
+                        token_id = dictionary[word]
+                    words.append(token_id)
+                sentence_lengths[i] = min(len(sentence),max_sent_len)
+                enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+                dec_go_sentences[i, 0] = dictionary['<GO>']
+                dec_go_sentences[i, 1:min(len(sentence),max_sent_len)+1] = words[:min(len(sentence),max_sent_len)]
+                dec_go_sentences[i, min(len(sentence),max_sent_len)+1] = dictionary['<END>']
+                dec_end_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+                dec_end_sentences[i, min(len(sentence),max_sent_len)] = dictionary['<END>']
+                i += 1
 
-    return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
+        return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
     
-        # for i, sentence in enumerate(data_sentences):
-        #     sentence_lengths.append(len(sentence))
-        #     enc_sentences[i, 0:len(sentence)] = sentence
-        # sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
-        # return sentence_lengths, max_sent_len, enc_sentences
+    else:
+        with open(path, 'r') as f:
+            for sent in f:
+                print('\rSentence %d' %i, end='')
+                sentence = sent.split()
+                words = []
+                for word in sentence:
+                    if word not in dictionary:
+                        token_id = dictionary['<OOV>']
+                    else:
+                        token_id = dictionary[word]
+                    words.append(token_id)
+                sentence_lengths[i] = min(len(sentence),max_sent_len)
+                enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+                i += 1
+        return sentence_lengths, max_sent_len, enc_sentences, dec_go_sentences, dec_end_sentences
+
 
 def sick_encode(sentences, vocab, max_sent_len_=None):
 
