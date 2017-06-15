@@ -121,7 +121,6 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
                 dec_end_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
                 dec_end_sentences[i, min(len(sentence),max_sent_len)] = dictionary['<END>']
                 i += 1
-
         return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
     
     else:
@@ -142,33 +141,38 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
         return sentence_lengths, max_sent_len, enc_sentences, dec_go_sentences, dec_end_sentences
 
 
-def sick_encode(sentences, vocab, max_sent_len_=None):
+def sick_encode(sentences, dictionary):
 
     '''
     Encodes sentences using the vocabulary provided
     '''
 
-    data_sentences = []
+    lines = len(sentences)
     max_sent_len = -1
+    tokenised_sentences = []
     for sentence in sentences:
+        this_sentence = nltk.word_tokenize(sentence)
+        tokenised_sentences.append(this_sentence)
+        length = len(this_sentence)
+        max_sent_len = length if length > max_sent_len else max_sent_len
+    print('\n%d lines to do\n' % lines)
+
+
+    enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
+    sentence_lengths = np.full([lines], 0, dtype=np.int32)
+    i = 0
+    for sentence in tokenised_sentences:
+        print('\rSentence %d' %i, end='')
         words = []
         for word in sentence:
-            if word not in vocab:
-                token_id = vocab['<OOV>']
+            if word not in dictionary:
+                token_id = dictionary['<OOV>']
             else:
-                token_id = vocab[word]
+                token_id = dictionary[word]
             words.append(token_id)
-        if len(words) > max_sent_len:
-            max_sent_len = len(words)
-        data_sentences.append(words)
-    if max_sent_len_ is not None:
-        max_sent_len = max_sent_len_
-    enc_sentences = np.full([len(data_sentences), max_sent_len], vocab['<PAD>'], dtype=np.int32)
-    sentence_lengths = []
-    for i, sentence in enumerate(data_sentences):
-        sentence_lengths.append(len(sentence))
-        enc_sentences[i, 0:len(sentence)] = sentence
-    sentence_lengths = np.array(sentence_lengths, dtype=np.int32)
+        sentence_lengths[i] = min(len(sentence),max_sent_len)
+        enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
+        i += 1
     return sentence_lengths, max_sent_len, enc_sentences
 
 
