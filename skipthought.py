@@ -134,6 +134,9 @@ class Skipthought_model(object):
                 sentences_states_h = sentences_states[-1]
         return sentences_states_h
 
+    # def output_fn(outputs):
+    #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
+
     def decoder(self, decoder_inputs, encoder_state, name, lengths= None, train = True):
         dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
         W = self.graph.get_tensor_by_name(name+'/weight:0')
@@ -149,7 +152,8 @@ class Skipthought_model(object):
                 return logits_projected, outputs_train
         else:
             with tf.variable_scope(name, reuse = True) as varscope:
-                output_fn = lambda x: tf.nn.softmax(tf.matmul(x, W) + b)
+                output_fn = lambda x: tf.matmul(x, W) + b
+                # output_fn = lambda x: tf.nn.softmax(tf.matmul(x, W) + b)
                 dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(output_fn =output_fn, encoder_state = encoder_state, 
                     embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.para.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
                 logits_inference, state_inference,_ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_inference, scope = varscope)
@@ -431,8 +435,8 @@ if __name__ == '__main__':
     # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
     # train('./models/skipthought_toronto/')
 
-    # paras = make_paras('./models/skipthought_gingerbread/')
+    paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    # train('./models/skipthought_gingerbread/')
-    test('./models/skipthought_gingerbread/', 22)
+    train('./models/skipthought_gingerbread/')
+    # test('./models/skipthought_gingerbread/', 22)
 
