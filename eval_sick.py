@@ -1,9 +1,8 @@
 import tensorflow as tf
 import numpy as np
-from util import import_data
-from util import build_dictionary
-from util import word_to_int
-from skipthought import skipthought_model
+from util import sick_encode
+from skipthought import Skipthought_para
+from skipthought import Skipthought_model
 import pandas as pd
 import pickle as pkl
 from scipy.stats import pearsonr
@@ -29,26 +28,30 @@ if __name__ == '__main__':
     _epochs = 500
     _batch_size = 64
     _train_size = 0.8
-    _temp_size = 1000
+    _temp_size = 10000
+    epoch = 22
 
-    data = pd.read_csv('./sick/sick_train/SICK_train.txt', sep='\t', index_col=0)
+    data = pd.read_csv('./eval/SICK/SICK_train.txt', sep='\t', index_col=0)
     sent_all = data.sentence_A.tolist() + data.sentence_B.tolist()
-    with open('./model/dict_files.pkl', 'rb') as f:
-        dictionary, reverse_dictionary, dictionary_sorted = pkl.load(f)
-    sent_lengths, _, sentences = word_to_int(sent_all[:_temp_size], dictionary)
+
+    model = 'skipthought'
+    corpus = 'gingerbread'
+    path = './models/%s_%s/' % (model, corpus)
+
+    
+
+    with open(path + 'paras.pkl', 'rb') as f:
+        paras = pkl.load(f)
+
+    with open(path + 'vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    sent_lengths, _, sentences = sick_encode(sent_all[:_temp_size], vocab)
+
+
     tf.reset_default_graph()
-    model = skipthought_model(corpus = './corpus/gingerbread.txt',
-        embedding_size = 200, 
-        hidden_size = 200, 
-        hidden_layers = 2, 
-        batch_size = 32, 
-        keep_prob_dropout = 1.0, 
-        learning_rate = 0.005, 
-        bidirectional = False,
-        loss_function = 'softmax',
-        sampled_words = 500,
-        num_epochs = 100)
-    model.load_model('./model/')
+    model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
+    model.load_model(path, epoch)
+    model.enc_lengths, model.enc_data = sent_lengths, sentences
     sentences_encoded = model.encode(sentences, sent_lengths)
     n = np.shape(sentences_encoded)[1]//2
     
@@ -79,8 +82,8 @@ if __name__ == '__main__':
         sick_feature_2 = tf.placeholder(tf.float32, [None, None], 'sick_feature_2')  
         b_1 = tf.get_variable('sick_bias_1', [_hidden_size], tf.float32, initializer = initializer)
         b_2 = tf.get_variable('sick_bias_2', [5], tf.float32, initializer = initializer)
-        W_1 = tf.get_variable('sick_weight_1', [model.embedding_size, _hidden_size], tf.float32, initializer = initializer)
-        W_2 = tf.get_variable('sick_weight_2', [model.embedding_size, _hidden_size], tf.float32, initializer = initializer)
+        W_1 = tf.get_variable('sick_weight_1', [model.para.embedding_size, _hidden_size], tf.float32, initializer = initializer)
+        W_2 = tf.get_variable('sick_weight_2', [model.para.embedding_size, _hidden_size], tf.float32, initializer = initializer)
         W_3 = tf.get_variable('sick_weight_3', [_hidden_size, 5], tf.float32, initializer = initializer)
         r = tf.reshape(tf.range(1, 6, 1, dtype = tf.float32), [-1, 1])
         global_step = tf.Variable(0, name = 'global_step', trainable = False)
@@ -99,7 +102,7 @@ if __name__ == '__main__':
                 feature_2_perm = train_feature_2[perm]
                 score_encoded_perm = train_score_encoded[perm]
                 avg_loss = 0
-                for step in range(n//_batch_size):
+                for step in range(n_train//_batch_size):
                     begin = step * _batch_size
                     end = (step + 1) * _batch_size
                     batch_feature_1 = feature_1_perm[begin : end]
@@ -110,6 +113,7 @@ if __name__ == '__main__':
                                   sick_feature_2: batch_feature_2}
                     _, batch_loss, batch_prediction = sess.run([opt_op, loss, prediction], feed_dict=train_dict)
                     avg_loss += batch_loss
+                    print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
                 if epoch % 10==0:
                     dev_dict = {sick_scores: dev_score_encoded,
                             sick_feature_1: dev_feature_1,
@@ -118,5 +122,7 @@ if __name__ == '__main__':
                     pr = pearsonr(dev_prediction[:,0], dev_score)[0]
                     sr = spearmanr(dev_prediction[:,0], dev_score)[0]
                     se = mse(dev_prediction[:,0], dev_score)
-                    print('Epoch %d: Train loss: %0.2f, Dev loss: %0.2f, Dev pearson: %0.2f, Dev spearman: %0.2f, Dev MSE: %0.2f\n' % (epoch, avg_loss, dev_loss, pr, sr, se))
+                    print('\nEpoch %d: Train loss: %0.2f, Dev loss: %0.2f, Dev pearson: %0.2f, Dev spearman: %0.2f, Dev MSE: %0.2f\n' % (epoch, avg_loss, dev_loss, pr, sr, se))
 
+                    i = np.random.randint(len(model.enc_data))
+                    print(model.print_sentence(model.enc_data[i], model.enc_lengths[i]))
