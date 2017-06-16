@@ -13,6 +13,8 @@ import operator
 import csv
 import pickle as pkl
 from collections import defaultdict
+from GRU_layer_norm import ln
+from GRU_layer_norm import LNGRUCell
 
 
 class Skipthought_para(object):
@@ -100,7 +102,7 @@ class Skipthought_model(object):
         self.loss = pre_loss + post_loss
         self.eta = tf.train.exponential_decay(self.para.learning_rate, self.global_step, self.para.decay_steps, self.para.decay, staircase=True)
         self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.eta, 
-            optimizer = 'Adam', clip_gradients=10.0, learning_rate_decay_fn=None, summaries = ['loss']) 
+            optimizer = 'Adam', clip_gradients=5.0, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
         pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
@@ -115,8 +117,8 @@ class Skipthought_model(object):
     def encoder(self, sentences_embedded, sentences_lengths, bidirectional = False):
         with tf.variable_scope("encoder") as varscope:
             if bidirectional:
-                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size//2)
-                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
+                cell = LNGRUCell(self.para.hidden_size//2)
+                # cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
                 cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Using bidirectional RNN')
                 sentences_outputs, sentences_states = tf.nn.bidirectional_dynamic_rnn(cell, cell, 
@@ -125,8 +127,8 @@ class Skipthought_model(object):
                 sentences_states_h = tf.concat([states_fw[-1],states_bw[-1]], axis = 1)
                 # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
             else:
-                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
-                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
+                cell = LNGRUCell(self.para.hidden_size)
+                # cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
                 cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Using one-directional RNN')
                 sentences_outputs, sentences_states = tf.nn.dynamic_rnn(cell = cell, 
@@ -138,7 +140,7 @@ class Skipthought_model(object):
     #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
     def decoder(self, decoder_inputs, encoder_state, name, lengths= None, train = True):
-        dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
+        dec_cell = LNGRUCell(self.para.embedding_size)
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         if train:
