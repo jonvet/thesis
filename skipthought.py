@@ -13,6 +13,7 @@ import operator
 import csv
 import pickle as pkl
 from collections import defaultdict
+import gru_cell
 
 
 class Skipthought_para(object):
@@ -52,9 +53,9 @@ class Skipthought_model(object):
 
         # Variables
         self.word_embeddings = tf.get_variable('embeddings', [self.vocabulary_size, self.para.embedding_size], tf.float32, initializer = self.initializer)
-        self.W_pre = tf.get_variable('precoder/weight', [self.para.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
+        self.W_pre = tf.get_variable('precoder/weight', [self.para.hidden_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.b_pre = tf.get_variable('precoder/bias', [self.vocabulary_size], tf.float32, initializer = self.initializer)
-        self.W_post = tf.get_variable('postcoder/weight', [self.para.embedding_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
+        self.W_post = tf.get_variable('postcoder/weight', [self.para.hidden_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.b_post = tf.get_variable('postcoder/bias', [self.vocabulary_size], tf.float32, initializer = self.initializer)
         self.global_step = tf.Variable(0, name = 'global_step', trainable = False)
 
@@ -125,7 +126,12 @@ class Skipthought_model(object):
                 sentences_states_h = tf.concat([states_fw[-1],states_bw[-1]], axis = 1)
                 # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
             else:
-                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
+                # cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
+                cell = gru_cell.LayerNormGRUCell(
+                    self.para.hidden_size,
+                    w_initializer=self.initializer,
+                    u_initializer=self.initializer,
+                    b_initializer=tf.constant_initializer(0.0))
                 cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
                 cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Using one-directional RNN')
@@ -138,7 +144,12 @@ class Skipthought_model(object):
     #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
     def decoder(self, decoder_inputs, encoder_state, name, lengths= None, train = True):
-        dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
+        # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
+        dec_cell = gru_cell.LayerNormGRUCell(
+                    self.para.hidden_size,
+                    w_initializer=self.initializer,
+                    u_initializer=self.initializer,
+                    b_initializer=tf.constant_initializer(0.0))
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         if train:
@@ -146,7 +157,7 @@ class Skipthought_model(object):
                 dynamic_fn_train = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
                 outputs_train, state_train, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_train, 
                     inputs = decoder_inputs, sequence_length = lengths, scope = varscope)
-                logits = tf.reshape(outputs_train, [-1, self.para.embedding_size])
+                logits = tf.reshape(outputs_train, [-1, self.para.hidden_size])
                 logits_train = tf.matmul(logits, W) + b
                 logits_projected = tf.reshape(logits_train, [self.para.batch_size, tf.reduce_max(lengths), self.vocabulary_size])
                 return logits_projected, outputs_train
@@ -376,7 +387,7 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 200, 
+    paras = Skipthought_para(embedding_size = 100, 
         hidden_size = 200, 
         hidden_layers = 2, 
         batch_size = 32, 
