@@ -177,7 +177,7 @@ class Skipthought_model(object):
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         logits = tf.stack(logits)
-        logits_reshaped = tf.reshape(logits, [-1, self.para.embedding_size])
+        logits_reshaped = tf.reshape(logits, [-1, self.para.hidden_size])
         labels_reshaped = tf.reshape(labels, [-1, 1])
         if self.para.loss_function == 'sampled_softmax':
             loss = tf.nn.sampled_softmax_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = self.para.sampled_words, 
@@ -387,12 +387,12 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 100, 
-        hidden_size = 200, 
-        hidden_layers = 2, 
-        batch_size = 32, 
+    paras = Skipthought_para(embedding_size = 620, 
+        hidden_size = 2400, 
+        hidden_layers = 1, 
+        batch_size = 128, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.01, 
+        learning_rate = 0.0008, 
         bidirectional = False,
         loss_function = 'softmax',
         sampled_words = 50,
@@ -442,12 +442,12 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    # paras = make_paras('./models/skipthought_toronto/')
+    paras = make_paras('./models/skipthought_toronto/')
     # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    # train('./models/skipthought_toronto/')
+    train('./models/skipthought_toronto/')
 
-    paras = make_paras('./models/skipthought_gingerbread/')
+    # paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    train('./models/skipthought_gingerbread/')
+    # train('./models/skipthought_gingerbread/')
     # test('./models/skipthought_gingerbread/', 22)
 
