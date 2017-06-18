@@ -14,12 +14,12 @@ import csv
 import pickle as pkl
 from collections import defaultdict
 import gru_cell
-
+from gru_cell import NoNormGRUCell
 
 class Skipthought_para(object):
 
     def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, 
-            bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step, max_sent_len):
+            bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -33,6 +33,8 @@ class Skipthought_para(object):
         self.decay = decay
         self.predict_step = predict_step
         self.max_sent_len = max_sent_len
+        self.uniform_init_scale = uniform_init_scale
+        self.clip_gradient_norm = clip_gradient_norm
 
 class Skipthought_model(object):
 
@@ -49,6 +51,7 @@ class Skipthought_model(object):
         print('\r~~~~~~~ Building graph ~~~~~~~\r')
         self.graph = tf.get_default_graph()
         self.initializer = tf.random_normal_initializer()
+        self.uniform_initializer = tf.random_uniform_initializer(minval=-self.para.uniform_init_scale, maxval=self.para.uniform_init_scale)
         # self.initializer = tf.contrib.layers.xavier_initializer(uniform=False, seed=None, dtype=tf.float32)
 
         # Variables
@@ -101,7 +104,7 @@ class Skipthought_model(object):
         self.loss = pre_loss + post_loss
         self.eta = tf.train.exponential_decay(self.para.learning_rate, self.global_step, self.para.decay_steps, self.para.decay, staircase=True)
         self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.eta, 
-            optimizer = 'Adam', clip_gradients=10.0, learning_rate_decay_fn=None, summaries = ['loss']) 
+            optimizer = 'Adam', clip_gradients=self.para.clip_gradient_norm, learning_rate_decay_fn=None, summaries = ['loss']) 
 
         # Decode sentences at prediction time
         pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
@@ -126,12 +129,17 @@ class Skipthought_model(object):
                 sentences_states_h = tf.concat([states_fw[-1],states_bw[-1]], axis = 1)
                 # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
             else:
-                # cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
-                cell = gru_cell.LayerNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.initializer,
-                    u_initializer=self.initializer,
-                    b_initializer=tf.constant_initializer(0.0))
+                cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
+                # cell = gru_cell.LayerNormGRUCell(
+                #     self.para.hidden_size,
+                #     w_initializer=self.uniform_initializer,
+                #     u_initializer=random_orthonormal_initializer,
+                #     b_initializer=tf.constant_initializer(0.0))
+                # cell = NoNormGRUCell(
+                #     self.para.hidden_size,
+                #     w_initializer=self.uniform_initializer,
+                #     u_initializer=random_orthonormal_initializer,
+                #     b_initializer=tf.constant_initializer(0.0))
                 cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
                 cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Using one-directional RNN')
@@ -144,12 +152,17 @@ class Skipthought_model(object):
     #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
     def decoder(self, decoder_inputs, encoder_state, name, lengths= None, train = True):
-        # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
-        dec_cell = gru_cell.LayerNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.initializer,
-                    u_initializer=self.initializer,
-                    b_initializer=tf.constant_initializer(0.0))
+        dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
+        # dec_cell = gru_cell.LayerNormGRUCell(
+        #             self.para.hidden_size,
+        #             w_initializer=self.uniform_initializer,
+        #             u_initializer=random_orthonormal_initializer,
+        #             b_initializer=tf.constant_initializer(0.0))
+        # dec_cell = NoNormGRUCell(
+        #             self.para.hidden_size,
+        #             w_initializer=self.uniform_initializer,
+        #             u_initializer=random_orthonormal_initializer,
+        #             b_initializer=tf.constant_initializer(0.0))
         W = self.graph.get_tensor_by_name(name+'/weight:0')
         b = self.graph.get_tensor_by_name(name+'/bias:0')
         if train:
@@ -184,7 +197,7 @@ class Skipthought_model(object):
                 num_classes = self.vocabulary_size, num_true=1)
         else:
             loss = tf.nn.nce_loss(weights= tf.transpose(W), biases=b, labels=labels_reshaped, inputs = logits_reshaped, num_sampled = self.para.sampled_words, 
-                num_classes = self.vocabulary_size, num_true=1)
+                num_classes = self.vocabulary_size)
         return tf.reduce_mean(loss)
 
     def print_sentence(self, sentence, length):
@@ -323,6 +336,13 @@ class Skipthought_model(object):
             if 'y' in save:
                 self.save_model(self.path + '/saved_models/', self.epoch)
 
+def random_orthonormal_initializer(shape, dtype=tf.float32, partition_info=None):  # pylint: disable=unused-argument
+    """Variable initializer that produces a random orthonormal matrix."""
+    if len(shape) != 2 or shape[0] != shape[1]:
+        raise ValueError("Expecting square shape, got %s" % shape)
+    _, u, _ = tf.svd(tf.random_normal(shape, dtype=dtype), full_matrices=True)
+    return u
+
 def preprocess(corpus_name, input_path, vocab_size, max_sent_len):
 
     '''
@@ -387,19 +407,21 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 620, 
-        hidden_size = 2400, 
-        hidden_layers = 1, 
-        batch_size = 128, 
+    paras = Skipthought_para(embedding_size = 200, 
+        hidden_size = 200, 
+        hidden_layers = 2, 
+        batch_size = 5, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.0008, 
+        learning_rate = 0.008, 
         bidirectional = False,
-        loss_function = 'softmax',
+        loss_function = 'sampled_softmax',
         sampled_words = 50,
         decay_steps = 100000,
         decay = 0.99,
-        predict_step = 100,
-        max_sent_len = 25)
+        predict_step = 5,
+        max_sent_len = 25,
+        uniform_init_scale = 0.1,
+        clip_gradient_norm=5.0)
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
     return paras
@@ -442,12 +464,12 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    paras = make_paras('./models/skipthought_toronto/')
+    # paras = make_paras('./models/skipthought_toronto/')
     # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    train('./models/skipthought_toronto/')
+    # train('./models/skipthought_toronto/')
 
-    # paras = make_paras('./models/skipthought_gingerbread/')
+    paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    # train('./models/skipthought_gingerbread/')
+    train('./models/skipthought_gingerbread/')
     # test('./models/skipthought_gingerbread/', 22)
 
