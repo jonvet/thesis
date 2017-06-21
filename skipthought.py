@@ -113,7 +113,6 @@ class Skipthought_model(object):
         post_predict = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'postcoder', proj_variables = self.proj, lengths = self.post_sentences_lengths, train = False)
         self.predict = [pre_predict, post_predict]
-        self.test = tf.arg_max(post_logits_projected, 2)
 
     def embed_data(self, data):
         return tf.nn.embedding_lookup(self.word_embeddings, data)
@@ -331,10 +330,8 @@ class Skipthought_model(object):
                             self.pre_sentences_lengths: batch_pre_lengths,
                             self.pre_inputs: batch_pre_inputs,
                             self.pre_labels: batch_pre_labels}
-                _, loss_val, batch_summary, testing = self.sess.run([self.opt_op, self.loss, self.merged, self.test], feed_dict=train_dict)
-                print(np.shape(testing[0]))
-                print(len(testing[0]))
-                self.print_sentence(testing[0], len(testing[0]))
+                _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
+
                 print('\rStep %d loss: %0.5f' % (self.global_step.eval(session = self.sess), loss_val), end='   ')
                 self.train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size))
                 self.total_loss += loss_val
