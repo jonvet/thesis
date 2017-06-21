@@ -195,6 +195,7 @@ class Skipthought_model(object):
                 dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(output_fn =output_fn, encoder_state = encoder_state, 
                     embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.para.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
                 logits_inference, state_inference,_ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_inference, scope = varscope)
+                print(logits_inference)
                 return tf.arg_max(logits_inference, 2)
     
     def get_softmax_loss(self, labels, logits):
@@ -426,18 +427,18 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 200, 
-        hidden_size = 200, 
+    paras = Skipthought_para(embedding_size = 620, 
+        hidden_size = 2400, 
         hidden_layers = 1, 
-        batch_size = 32, 
+        batch_size = 512, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.0008, 
+        learning_rate = 0.008, 
         bidirectional = False,
-        loss_function = 'softmax',
-        sampled_words = 512,
+        loss_function = 'sampled_softmax',
+        sampled_words = 50,
         decay_steps = 100000,
         decay = 0.99,
-        predict_step = 10,
+        predict_step = 100,
         max_sent_len = 25,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0)
@@ -483,12 +484,12 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    # paras = make_paras('./models/skipthought_toronto/')
+    paras = make_paras('./models/skipthought_toronto/')
     # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    # train('./models/skipthought_toronto/')
+    train('./models/skipthought_toronto/')
 
-    paras = make_paras('./models/skipthought_gingerbread/')
+    # paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    train('./models/skipthought_gingerbread/')
+    # train('./models/skipthought_gingerbread/')
     # test('./models/skipthought_gingerbread/', 22)
 
