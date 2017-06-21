@@ -7,6 +7,11 @@ from collections import defaultdict
 import os
 import glob
 
+def make_mask(x):
+    mask = (x>0)*1
+    mask[:,0] = 1
+    return mask
+
 def word_vocab(path, vocab_name=None, vocab=None):
 
     if vocab == None:

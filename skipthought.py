@@ -5,6 +5,7 @@ from util import word_vocab
 from util import sent_to_int
 from util import finalise_vocab
 from tensorflow.contrib.tensorboard.plugins import projector
+from tensorflow.python.layers.core import Dense
 import time
 from sys import stdout
 import os
@@ -16,6 +17,7 @@ from collections import defaultdict
 import gru_cell
 from gru_cell import NoNormGRUCell
 from gru_cell import AnyGRUCell
+
 
 class Skipthought_para(object):
 
@@ -59,9 +61,8 @@ class Skipthought_model(object):
         self.global_step = tf.Variable(0, name = 'global_step', trainable = False)
 
         with tf.variable_scope("output_projection") as varscope:
-            self.W = tf.get_variable('weight', [self.para.hidden_size, self.vocabulary_size], tf.float32, initializer = self.initializer)
-            self.b = tf.get_variable('bias', [self.vocabulary_size], tf.float32, initializer = self.initializer)
-        self.proj = (self.W, self.b)
+            self.V = Dense(self.vocabulary_size)
+            self.V.build(input_shape=[None, self.para.embedding_size])
 
         # Encoder placeholders
         self.sentences = tf.placeholder(tf.int32, [None, None], "sentences")
@@ -70,12 +71,12 @@ class Skipthought_model(object):
         # Postcoder placeholders
         self.post_inputs = tf.placeholder(tf.int32, [None, None], "post_inputs")
         self.post_labels = tf.placeholder(tf.int32, [None, None], "post_labels")
-        self.post_sentences_lengths = tf.placeholder(tf.int32, [None], "post_sentences_lengths")
+        self.post_sentences_lengths = tf.placeholder(tf.int32, [None], "post_mask")
 
         # Precoder placeholders
         self.pre_inputs = tf.placeholder(tf.int32, [None, None], "pre_inputs")
         self.pre_labels = tf.placeholder(tf.int32, [None, None], "pre_labels")
-        self.pre_sentences_lengths = tf.placeholder(tf.int32, [None], "pre_sentences_lengths")
+        self.pre_sentences_lengths = tf.placeholder(tf.int32, [None], "pre_mask")
 
         # Embed sentences
         sentences_embedded = self.embed_data(self.sentences) 
@@ -86,18 +87,18 @@ class Skipthought_model(object):
         self.encoded_sentences = self.encoder(sentences_embedded, self.sentences_lengths, self.para.bidirectional)
 
         # Postcoder
-        post_logits_projected, post_logits = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
-            name = 'postcoder', proj_variables = self.proj, lengths = self.post_sentences_lengths, train = True)
+        post_logits_projected = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
+            name = 'postcoder', proj_layer = self.V, lengths = self.post_sentences_lengths, infer = False)
         
         # Precoder
-        pre_logits_projected, pre_logits = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
-            name = 'precoder', proj_variables = self.proj, lengths = self.pre_sentences_lengths, train = True)
+        pre_logits_projected = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
+            name = 'precoder', proj_layer = self.V, lengths = self.pre_sentences_lengths, infer = False)
         
         # Compute loss
         print('Using %s loss' % self.para.loss_function)
         if self.para.loss_function == 'softmax':
-            post_loss = self.get_softmax_loss(self.post_labels, post_logits_projected) 
-            pre_loss = self.get_softmax_loss(self.pre_labels, pre_logits_projected) 
+            post_loss = self.get_softmax_loss(self.post_labels, post_logits_projected[0]) 
+            pre_loss = self.get_softmax_loss(self.pre_labels, pre_logits_projected[0]) 
         else:
             pre_loss = self.get_sampled_softmax_loss(self.pre_labels, pre_logits, proj_variables = self.proj, name='precoder') 
             post_loss = self.get_sampled_softmax_loss(self.post_labels, post_logits, proj_variables = self.proj, name='postcoder') 
@@ -109,11 +110,11 @@ class Skipthought_model(object):
 
         # Decode sentences at prediction time
         pre_predict = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
-            name = 'precoder', proj_variables = self.proj, lengths = self.pre_sentences_lengths, train = False)
+            name = 'precoder', proj_layer = self.V, lengths = self.pre_sentences_lengths, infer = True)
         post_predict = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
-            name = 'postcoder', proj_variables = self.proj, lengths = self.post_sentences_lengths, train = False)
+            name = 'postcoder', proj_layer = self.V, lengths = self.post_sentences_lengths, infer = True)
         self.predict = [pre_predict, post_predict]
-        self.test = tf.arg_max(post_logits_projected, 2)
+        # self.test = tf.arg_max(post_logits_projected, 2)
 
     def embed_data(self, data):
         return tf.nn.embedding_lookup(self.word_embeddings, data)
@@ -153,56 +154,45 @@ class Skipthought_model(object):
     # def output_fn(outputs):
     #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
-    def decoder(self, decoder_inputs, encoder_state, name, proj_variables, lengths= None, train = True):
+    def decoder(self, decoder_inputs, encoder_state, name, proj_layer, lengths=None, infer=False):
 
-        W, b = proj_variables
-        def output_fn(x):
-                return tf.matmul(x, W) + b
-        
-        if train:
-            with tf.variable_scope(name, reuse=False) as varscope: 
-                # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)     
-                # dec_cell = gru_cell.LayerNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                dec_cell = NoNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.uniform_initializer,
-                    u_initializer=random_orthonormal_initializer,
-                    b_initializer=tf.constant_initializer(0.0))
-                dynamic_fn_train = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
-                outputs_train, state_train, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_train, 
-                    inputs = decoder_inputs, sequence_length = lengths, scope = varscope)
-                outputs_train_reshaped = tf.reshape(outputs_train, [-1, self.para.hidden_size])
-                logits = output_fn(outputs_train_reshaped)
-                logits_projected = tf.reshape(logits, [self.para.batch_size, tf.reduce_max(lengths), self.vocabulary_size])
-                return logits_projected, outputs_train
-        else:
-            with tf.variable_scope(name, reuse=True) as varscope:
-                # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
-                # dec_cell = gru_cell.LayerNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                dec_cell = NoNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.uniform_initializer,
-                    u_initializer=random_orthonormal_initializer,
-                    b_initializer=tf.constant_initializer(0.0))
-                dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(output_fn =output_fn, encoder_state = encoder_state, 
-                    embeddings = self.word_embeddings, start_of_sequence_id = 2, end_of_sequence_id = 3, maximum_length = self.para.max_sent_len, num_decoder_symbols = self.vocabulary_size) 
-                logits_inference, state_inference,_ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell, decoder_fn = dynamic_fn_inference, scope = varscope)
-                return tf.arg_max(logits_inference, 2)
-    
+        with tf.variable_scope(name, reuse=infer) as varscope:
+            dec_cell = NoNormGRUCell(
+                self.para.hidden_size,
+                w_initializer=self.uniform_initializer,
+                u_initializer=random_orthonormal_initializer,
+                b_initializer=tf.constant_initializer(0.0))
+
+            if infer:
+                helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+                    embedding=self.word_embeddings, 
+                    start_tokens=tf.tile([2], [self.para.batch_size]), 
+                    end_token=3)
+            else:
+                helper = tf.contrib.seq2seq.TrainingHelper(
+                    inputs=decoder_inputs, 
+                    sequence_length=lengths)
+            
+            decoder = tf.contrib.seq2seq.BasicDecoder(
+                cell=dec_cell,
+                helper=helper,
+                initial_state=encoder_state,
+                output_layer=proj_layer)
+            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
+               decoder=decoder,
+               output_time_major=False,
+               impute_finished=True,
+               maximum_iterations=26)
+
+            return outputs
+
     def get_softmax_loss(self, labels, logits):
-        return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
+        local_logits = tf.cast(logits, tf.float32)
+        return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=local_logits))
 
-    def get_sampled_softmax_loss(self, labels, logits, proj_variables, name):
+    def get_sampled_softmax_loss(self, labels, logits, proj_layer, name):
 
-        W, b = proj_variables
+        W, b = proj_layer.kernel, proj_layer.bias
         logits = tf.stack(logits)
         logits_reshaped = tf.reshape(logits, [-1, self.para.hidden_size])
         labels_reshaped = tf.reshape(labels, [-1, 1])
@@ -322,6 +312,8 @@ class Skipthought_model(object):
                 batch_pre_lengths = pre_lengths_perm[begin : end]
                 batch_pre_inputs = pre_inputs_perm[begin:end, :np.max(batch_pre_lengths)]
                 batch_pre_labels = pre_labels_perm[begin:end, :np.max(batch_pre_lengths)]
+                print(np.shape(batch_pre_labels))
+                print(np.shape(batch_post_labels))
                 train_dict = {self.sentences_lengths: batch_enc_lengths,
                             self.sentences: batch_enc_inputs, 
                             self.post_sentences_lengths: batch_post_lengths,
@@ -330,10 +322,10 @@ class Skipthought_model(object):
                             self.pre_sentences_lengths: batch_pre_lengths,
                             self.pre_inputs: batch_pre_inputs,
                             self.pre_labels: batch_pre_labels}
-                _, loss_val, batch_summary, testing = self.sess.run([self.opt_op, self.loss, self.merged, self.test], feed_dict=train_dict)
-                print(np.shape(testing[0]))
-                print(len(testing[0]))
-                self.print_sentence(testing[0], len(testing[0]))
+                _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
+                # print(np.shape(testing[0]))
+                # print(len(testing[0]))
+                # self.print_sentence(testing[0], len(testing[0]))
                 print('\rStep %d loss: %0.5f' % (self.global_step.eval(session = self.sess), loss_val), end='   ')
                 self.train_loss_writer.add_summary(batch_summary, step + (self.corpus_length // self.para.batch_size))
                 self.total_loss += loss_val
@@ -348,7 +340,11 @@ class Skipthought_model(object):
                     hours = secs//3600
                     minutes = secs / 60 - hours * 60
                     print('\nTime elapsed: %d:%02d hours' % (hours, minutes))
+                    self.para.batch_size=1
+                    print(self.para.batch_size)
                     self.evaluate()
+                    self.para.batch_size=32
+                    print(self.para.batch_size)
                     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
         except KeyboardInterrupt:
             save = input('save?')
@@ -406,6 +402,8 @@ def preprocess(corpus_name, input_path, vocab_size, max_sent_len):
         i+=1
     print('\nTraining data created')
 
+
+
 def get_training_data(path, vocab, corpus_name, max_sent_len):
 
     '''
@@ -413,6 +411,10 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     '''
 
     sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
+
+    # post_mask = util.make_mask(post_data)
+    # pre_mask = util.make_mask(pre_data)
+
     enc_lengths = sent_lengths[1:-1] 
     enc_data = enc_data[1:-1]
     post_lengths = sent_lengths[2:] + 1
@@ -428,7 +430,7 @@ def make_paras(path):
         os.makedirs(path)
     paras = Skipthought_para(embedding_size = 200, 
         hidden_size = 200, 
-        hidden_layers = 1, 
+        hidden_layers = 2, 
         batch_size = 32, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0008, 
@@ -465,7 +467,7 @@ def train(path):
                 data = pkl.load(f)
             model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
             model.train()
-        model.save_model(model.path + '/saved_models/', epoch)
+        # model.save_model(model.path + '/saved_models/', epoch)
         model.epoch += 1
 
 def test(path, epoch):
