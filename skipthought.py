@@ -4,6 +4,7 @@ import util
 from util import word_vocab
 from util import sent_to_int
 from util import finalise_vocab
+from util import make_mask
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
@@ -16,6 +17,7 @@ from collections import defaultdict
 import gru_cell
 from gru_cell import NoNormGRUCell
 from gru_cell import AnyGRUCell
+
 
 class Skipthought_para(object):
 
@@ -69,13 +71,15 @@ class Skipthought_model(object):
 
         # Postcoder placeholders
         self.post_inputs = tf.placeholder(tf.int32, [None, None], "post_inputs")
-        self.post_labels = tf.placeholder(tf.int32, [None, None], "post_labels")
+        self.post_labels = tf.placeholder(tf.float32, [None, None], "post_labels")
         self.post_sentences_lengths = tf.placeholder(tf.int32, [None], "post_sentences_lengths")
+        self.post_sentences_masks = tf.placeholder(tf.float32, [None, None], "post_sentences_masks")
 
         # Precoder placeholders
         self.pre_inputs = tf.placeholder(tf.int32, [None, None], "pre_inputs")
-        self.pre_labels = tf.placeholder(tf.int32, [None, None], "pre_labels")
+        self.pre_labels = tf.placeholder(tf.float32, [None, None], "pre_labels")
         self.pre_sentences_lengths = tf.placeholder(tf.int32, [None], "pre_sentences_lengths")
+        self.pre_sentences_masks = tf.placeholder(tf.float32, [None, None], "pre_sentences_masks")
 
         # Embed sentences
         sentences_embedded = self.embed_data(self.sentences) 
@@ -93,16 +97,29 @@ class Skipthought_model(object):
         pre_logits_projected, pre_logits = self.decoder(decoder_inputs = pre_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'precoder', proj_variables = self.proj, lengths = self.pre_sentences_lengths, train = True)
         
+
         # Compute loss
         print('Using %s loss' % self.para.loss_function)
         if self.para.loss_function == 'softmax':
             post_loss = self.get_softmax_loss(self.post_labels, post_logits_projected) 
             pre_loss = self.get_softmax_loss(self.pre_labels, pre_logits_projected) 
+            self.loss = pre_loss + post_loss
         else:
-            pre_loss = self.get_sampled_softmax_loss(self.pre_labels, pre_logits, proj_variables = self.proj, name='precoder') 
-            post_loss = self.get_sampled_softmax_loss(self.post_labels, post_logits, proj_variables = self.proj, name='postcoder') 
+            # sampled_pre_loss = self.get_sampled_softmax_loss(self.pre_labels, pre_logits, proj_variables = self.proj, name='precoder') 
+            # sampled_post_loss = self.get_sampled_softmax_loss(self.post_labels, post_logits, proj_variables = self.proj, name='postcoder') 
 
-        self.loss = pre_loss + post_loss
+            prev_sampled_loss = self.get_sampled_loss(*self.proj)
+            # next_sampled_loss = self.get_sampled_loss(*self.proj)
+            loss_prev = tf.contrib.seq2seq.sequence_loss(pre_logits,
+                                                    self.pre_labels,
+                                                    self.pre_sentences_masks,
+                                                    softmax_loss_function=prev_sampled_loss)
+            loss_next = tf.contrib.seq2seq.sequence_loss(post_logits,
+                                                    self.post_labels,
+                                                    self.post_sentences_masks,
+                                                    softmax_loss_function=prev_sampled_loss)
+            self.loss = loss_prev + loss_next
+
         self.eta = tf.train.exponential_decay(self.para.learning_rate, self.global_step, self.para.decay_steps, self.para.decay, staircase=True)
         self.opt_op = tf.contrib.layers.optimize_loss(loss = self.loss, global_step = self.global_step, learning_rate = self.eta, 
             optimizer = 'Adam', clip_gradients=self.para.clip_gradient_norm, learning_rate_decay_fn=None, summaries = ['loss']) 
@@ -113,6 +130,22 @@ class Skipthought_model(object):
         post_predict = self.decoder(decoder_inputs = post_inputs_embedded, encoder_state = self.encoded_sentences, 
             name = 'postcoder', proj_variables = self.proj, lengths = self.post_sentences_lengths, train = False)
         self.predict = [pre_predict, post_predict]
+
+    def get_sampled_loss(self, w, b):
+        w_t = tf.transpose(w)
+        def sampled_loss(inputs, labels):
+            labels = tf.reshape(labels, [-1, 1])
+            local_w_t = tf.cast(w_t, tf.float32)
+            local_b = tf.cast(b, tf.float32)
+            local_inputs = tf.cast(inputs, tf.float32)
+            return tf.nn.sampled_softmax_loss(weights=w_t, 
+                biases=local_b, 
+                labels=labels, 
+                inputs = local_inputs, 
+                num_sampled = self.para.sampled_words, 
+                num_classes = self.vocabulary_size, 
+                num_true=1)
+        return sampled_loss
 
     def embed_data(self, data):
         return tf.nn.embedding_lookup(self.word_embeddings, data)
@@ -309,7 +342,9 @@ class Skipthought_model(object):
             pre_lengths_perm = self.pre_lengths[perm]
             pre_inputs_perm = np.array(self.pre_data)[perm]
             pre_labels_perm = np.array(self.pre_lab)[perm]
-            
+            pre_masks_perm = self.pre_masks[perm]
+            post_masks_perm = self.post_masks[perm]
+
             n_steps = self.corpus_length // self.para.batch_size
             for step in range(n_steps):
                 begin = step * self.para.batch_size
@@ -322,6 +357,14 @@ class Skipthought_model(object):
                 batch_pre_lengths = pre_lengths_perm[begin : end]
                 batch_pre_inputs = pre_inputs_perm[begin:end, :np.max(batch_pre_lengths)]
                 batch_pre_labels = pre_labels_perm[begin:end, :np.max(batch_pre_lengths)]
+
+                batch_post_masks = post_masks_perm[begin:end, :np.max(batch_post_lengths)]
+                batch_pre_masks = pre_masks_perm[begin:end, :np.max(batch_pre_lengths)]
+
+                print(batch_post_lengths)
+                print(batch_pre_lengths)  
+                print(np.shape(batch_post_labels)) 
+                print(np.shape(batch_pre_labels))       
                 train_dict = {self.sentences_lengths: batch_enc_lengths,
                             self.sentences: batch_enc_inputs, 
                             self.post_sentences_lengths: batch_post_lengths,
@@ -329,7 +372,9 @@ class Skipthought_model(object):
                             self.post_labels: batch_post_labels,
                             self.pre_sentences_lengths: batch_pre_lengths,
                             self.pre_inputs: batch_pre_inputs,
-                            self.pre_labels: batch_pre_labels}
+                            self.pre_labels: batch_pre_labels,
+                            self.post_sentences_masks: batch_pre_masks,
+                            self.pre_sentences_masks: batch_pre_masks,}
                 _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
 
                 print('\rStep %d loss: %0.5f' % (self.global_step.eval(session = self.sess), loss_val), end='   ')
@@ -419,15 +464,18 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     pre_lengths = sent_lengths[:-2] + 1
     pre_data = dec_data[:-2]
     pre_lab = dec_lab[:-2]
-    return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
+    post_masks = make_mask(post_lab)
+    pre_masks = make_mask(pre_lab)
+    # return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
+    return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_masks, post_data, post_lab, pre_lengths, pre_masks, pre_data, pre_lab]
 
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 620, 
-        hidden_size = 2400, 
+    paras = Skipthought_para(embedding_size = 200, 
+        hidden_size = 200, 
         hidden_layers = 1, 
-        batch_size = 512, 
+        batch_size = 6, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.008, 
         bidirectional = False,
@@ -461,7 +509,9 @@ def train(path):
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
-            model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
+            model.enc_lengths, model.enc_data, model.post_lengths, model.post_masks, model.post_data, model.post_lab, model.pre_lengths, model.pre_masks, model.pre_data, model.pre_lab = data[2:]
+            # print(model.post_data[0])
+            # print(model.post_masks[0])
             model.train()
         model.save_model(model.path + '/saved_models/', epoch)
         model.epoch += 1
@@ -476,17 +526,17 @@ def test(path, epoch):
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
     model.load_model(path, epoch)
-    model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
+    model.enc_lengths, model.enc_data, model.post_lengths, model.post_masks, model.post_data, model.post_lab, model.pre_lengths, model.pre_masks, model.pre_data, model.pre_lab = data[2:]
     model.evaluate(1)
 
 if __name__ == '__main__':
 
-    paras = make_paras('./models/skipthought_toronto/')
+    # paras = make_paras('./models/skipthought_toronto/')
     # preprocess('toronto', './corpus/toronto_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    train('./models/skipthought_toronto/')
+    # train('./models/skipthought_toronto/')
 
-    # paras = make_paras('./models/skipthought_gingerbread/')
+    paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess('gingerbread', './corpus/gingerbread_corpus/', vocab_size = 20000, max_sent_len=paras.max_sent_len)
-    # train('./models/skipthought_gingerbread/')
+    train('./models/skipthought_gingerbread/')
     # test('./models/skipthought_gingerbread/', 22)
 

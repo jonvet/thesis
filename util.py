@@ -7,6 +7,11 @@ from collections import defaultdict
 import os
 import glob
 
+def make_mask(x):
+    mask = (x>0)*1
+    mask[:,0] = 1
+    return mask
+
 def word_vocab(path, vocab_name=None, vocab=None):
 
     if vocab == None:
@@ -88,7 +93,7 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
     lines = 0
     with open(path, 'r') as f:
         for line in f:
-            lines += 1
+            lines += 1 
     print('\n%d lines to do\n' % lines)
 
     if decoder:
