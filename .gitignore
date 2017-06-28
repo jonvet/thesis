@@ -3,3 +3,4 @@ models/
 eval/
 tensorboard/
 corpus/
+training_data/

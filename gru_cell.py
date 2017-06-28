@@ -179,7 +179,7 @@ class NoNormGRUCell(tf.contrib.rnn.RNNCell):
     return _initializer
 
   def __call__(self, inputs, state, scope=None):
-    """GRU cell with layer normalization."""
+
     input_dim = inputs.get_shape().as_list()[1]
     num_units = self._num_units
 
@@ -254,7 +254,7 @@ class AnyGRUCell(tf.contrib.rnn.RNNCell):
     return _initializer
 
   def __call__(self, inputs, state, scope=None):
-    """GRU cell with layer normalization."""
+
     input_dim = inputs.get_shape().as_list()[1]
     num_units = self._num_units
 
