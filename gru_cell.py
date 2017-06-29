@@ -204,23 +204,22 @@ class NoNormGRUCell(tf.contrib.rnn.RNNCell):
       new_h = (1 - z) * state + z * self._activation(h_hat)
     return new_h, new_h
 
-class AnyGRUCell(tf.contrib.rnn.RNNCell):
+
+class b_NoNormGRUCell(tf.contrib.rnn.RNNCell):
 
   def __init__(self,
                num_units,
                w_initializer,
                u_initializer,
                b_initializer,
-               w_x,
-               w,
+               encoded_sentences,
                activation=tf.nn.tanh):
 
     self._num_units = num_units
     self._w_initializer = w_initializer
     self._u_initializer = u_initializer
     self._b_initializer = b_initializer
-    self.w_x = w_x
-    self.w = w
+    self._encoded_sentences = encoded_sentences
     self._activation = activation
 
   @property
@@ -253,6 +252,15 @@ class AnyGRUCell(tf.contrib.rnn.RNNCell):
 
     return _initializer
 
+  # def _c_initializer(self, input_dim):
+
+  #   def _initializer(shape, dtype=tf.float32, partition_info=None):
+  #     num_units = self._num_units
+  #     c = self._w_initializer([num_units, num_units], dtype, partition_info)
+  #     return c
+
+    return _initializer
+
   def __call__(self, inputs, state, scope=None):
 
     input_dim = inputs.get_shape().as_list()[1]
@@ -263,13 +271,185 @@ class AnyGRUCell(tf.contrib.rnn.RNNCell):
         w_h = tf.get_variable(
             "w_h", [num_units, 2 * num_units],
             initializer=self._w_h_initializer())
+        w_x = tf.get_variable(
+            "w_x", [input_dim, 2 * num_units],
+            initializer=self._w_x_initializer(input_dim))
+        w_c = tf.get_variable(
+            "w_c", [num_units, 2 * num_units],
+            initializer=self._w_h_initializer())
         z_and_r = (tf.matmul(state, w_h) +
-                   tf.matmul(inputs, self.w_x))
+                   tf.matmul(inputs, w_x) +
+                   tf.matmul(self._encoded_sentences, w_c))
         z, r = tf.split(tf.sigmoid(z_and_r), 2, 1)
       with tf.variable_scope("candidate"):
+        w = tf.get_variable(
+            "w", [input_dim, num_units], initializer=self._w_initializer)
         u = tf.get_variable(
             "u", [num_units, num_units], initializer=self._u_initializer)
+        c = tf.get_variable(
+            "c", [num_units, num_units], initializer=self._w_initializer)
+
         h_hat = (r * tf.matmul(state, u) +
-                 tf.matmul(inputs, self.w))
+                 tf.matmul(inputs, w) +
+                 tf.matmul(self._encoded_sentences, c))
       new_h = (1 - z) * state + z * self._activation(h_hat)
     return new_h, new_h
+
+
+class b_NoNormGRUCell2(tf.contrib.rnn.RNNCell):
+
+  def __init__(self,
+               num_units,
+               w_initializer,
+               u_initializer,
+               b_initializer,
+               biases,
+               activation=tf.nn.tanh):
+
+    self._num_units = num_units
+    self._w_initializer = w_initializer
+    self._u_initializer = u_initializer
+    self._b_initializer = b_initializer
+    self._b_z_r, self._b_h = biases
+    self._activation = activation
+
+  @property
+  def state_size(self):
+    return self._num_units
+
+  @property
+  def output_size(self):
+    return self._num_units
+
+  def _w_h_initializer(self):
+
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
+      num_units = self._num_units
+      assert shape == [num_units, 2 * num_units]
+      u_z = self._u_initializer([num_units, num_units], dtype, partition_info)
+      u_r = self._u_initializer([num_units, num_units], dtype, partition_info)
+      return tf.concat([u_z, u_r], 1)
+
+    return _initializer
+
+  def _w_x_initializer(self, input_dim):
+
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
+      num_units = self._num_units
+      assert shape == [input_dim, 2 * num_units]
+      w_z = self._w_initializer([input_dim, num_units], dtype, partition_info)
+      w_r = self._w_initializer([input_dim, num_units], dtype, partition_info)
+      return tf.concat([w_z, w_r], 1)
+
+    return _initializer
+
+  # def _c_initializer(self, input_dim):
+
+  #   def _initializer(shape, dtype=tf.float32, partition_info=None):
+  #     num_units = self._num_units
+  #     c = self._w_initializer([num_units, num_units], dtype, partition_info)
+  #     return c
+
+    return _initializer
+
+  def __call__(self, inputs, state, scope=None):
+
+    input_dim = inputs.get_shape().as_list()[1]
+    num_units = self._num_units
+
+    with tf.variable_scope(scope or "gru_cell"):
+      with tf.variable_scope("gates"):
+        w_h = tf.get_variable(
+            "w_h", [num_units, 2 * num_units],
+            initializer=self._w_h_initializer())
+        w_x = tf.get_variable(
+            "w_x", [input_dim, 2 * num_units],
+            initializer=self._w_x_initializer(input_dim))
+        w_c = tf.get_variable(
+            "w_c", [num_units, 2 * num_units],
+            initializer=self._w_h_initializer())
+        z_and_r = (tf.matmul(state, w_h) +
+                   tf.matmul(inputs, w_x) +
+                   self._b_z_r)
+        z, r = tf.split(tf.sigmoid(z_and_r), 2, 1)
+      with tf.variable_scope("candidate"):
+        w = tf.get_variable(
+            "w", [input_dim, num_units], initializer=self._w_initializer)
+        u = tf.get_variable(
+            "u", [num_units, num_units], initializer=self._u_initializer)
+
+        h_hat = (r * tf.matmul(state, u) +
+                 tf.matmul(inputs, w) +
+                 self._b_h)
+      new_h = (1 - z) * state + z * self._activation(h_hat)
+    return new_h, new_h
+
+# class AnyGRUCell(tf.contrib.rnn.RNNCell):
+
+#   def __init__(self,
+#                num_units,
+#                w_initializer,
+#                u_initializer,
+#                b_initializer,
+#                w_x,
+#                w,
+#                activation=tf.nn.tanh):
+
+#     self._num_units = num_units
+#     self._w_initializer = w_initializer
+#     self._u_initializer = u_initializer
+#     self._b_initializer = b_initializer
+#     self.w_x = w_x
+#     self.w = w
+#     self._activation = activation
+
+#   @property
+#   def state_size(self):
+#     return self._num_units
+
+#   @property
+#   def output_size(self):
+#     return self._num_units
+
+#   def _w_h_initializer(self):
+
+#     def _initializer(shape, dtype=tf.float32, partition_info=None):
+#       num_units = self._num_units
+#       assert shape == [num_units, 2 * num_units]
+#       u_z = self._u_initializer([num_units, num_units], dtype, partition_info)
+#       u_r = self._u_initializer([num_units, num_units], dtype, partition_info)
+#       return tf.concat([u_z, u_r], 1)
+
+#     return _initializer
+
+#   def _w_x_initializer(self, input_dim):
+
+#     def _initializer(shape, dtype=tf.float32, partition_info=None):
+#       num_units = self._num_units
+#       assert shape == [input_dim, 2 * num_units]
+#       w_z = self._w_initializer([input_dim, num_units], dtype, partition_info)
+#       w_r = self._w_initializer([input_dim, num_units], dtype, partition_info)
+#       return tf.concat([w_z, w_r], 1)
+
+#     return _initializer
+
+#   def __call__(self, inputs, state, scope=None):
+
+#     input_dim = inputs.get_shape().as_list()[1]
+#     num_units = self._num_units
+
+#     with tf.variable_scope(scope or "gru_cell"):
+#       with tf.variable_scope("gates"):
+#         w_h = tf.get_variable(
+#             "w_h", [num_units, 2 * num_units],
+#             initializer=self._w_h_initializer())
+#         z_and_r = (tf.matmul(state, w_h) +
+#                    tf.matmul(inputs, self.w_x))
+#         z, r = tf.split(tf.sigmoid(z_and_r), 2, 1)
+#       with tf.variable_scope("candidate"):
+#         u = tf.get_variable(
+#             "u", [num_units, num_units], initializer=self._u_initializer)
+#         h_hat = (r * tf.matmul(state, u) +
+#                  tf.matmul(inputs, self.w))
+#       new_h = (1 - z) * state + z * self._activation(h_hat)
+#     return new_h, new_h
