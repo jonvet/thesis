@@ -43,7 +43,7 @@ if __name__ == '__main__':
     _train_size = 0.8
     _temp_size = 10000
     _use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-    epoch = 0 # Determines which saved model to use
+    epoch = 1 # Determines which saved model to use
 
 
     path = './models/toronto_n2/'
@@ -66,7 +66,11 @@ if __name__ == '__main__':
         print('Using expanded vocab')
         with open(path + 'expanded_vocab.pkl', 'rb') as f:
             vocab = pkl.load(f)
-        embeddings = np.load(path + 'expanded_embeddings.npy')
+
+        # random embeddings
+        num = len(vocab)
+        embeddings = np.random.randn(num,model.para.hidden_size)
+        # embeddings = np.load(path + 'expanded_embeddings.npy')
 
         sent_lengths, sentences = sick_encode(
             sentences = sent_all[:_temp_size], 

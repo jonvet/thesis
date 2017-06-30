@@ -627,7 +627,7 @@ if __name__ == '__main__':
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
     train(model_path = './models/toronto_n3/',
-        training_data_path = './training_data/toronto')
+        training_data_path = './training_data/toronto/')
 
     # paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess(
