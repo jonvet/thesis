@@ -36,14 +36,14 @@ def prepare_batches(lengths, sentences, b_size):
 if __name__ == '__main__':
 
     # Parameters for SICK classifier
-    _hidden_size = 700
-    _learning_rate = 0.05
+    _learning_rate = 0.01
     _epochs = 500
-    _batch_size = 25
+    _batch_size = 100
     _train_size = 0.8
     _temp_size = 10000
+    _L2 = 0
     _use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-    epoch = 0 # Determines which saved model to use
+    epoch = 1 # Determines which saved model to use
 
 
     path = './models/toronto_n2/'
@@ -66,7 +66,12 @@ if __name__ == '__main__':
         print('Using expanded vocab')
         with open(path + 'expanded_vocab.pkl', 'rb') as f:
             vocab = pkl.load(f)
-        embeddings = np.load(path + 'expanded_embeddings.npy')
+
+        # random embeddings
+        num = len(vocab)
+        embeddings = np.random.randn(num,model.para.embedding_size)
+        print('random embeddings created')
+        # embeddings = np.load(path + 'expanded_embeddings.npy')
 
         sent_lengths, sentences = sick_encode(
             sentences = sent_all[:_temp_size], 
@@ -105,17 +110,17 @@ if __name__ == '__main__':
     sent_b = sentences_encoded[n:, :]
     feature_1 = sent_a * sent_b 
     feature_2 = np.abs(sent_a - sent_b)
+    features = np.concatenate(
+        (sent_a, sent_b, feature_1, feature_2), axis=1)
 
     score = data.relatedness_score.tolist()
     score_encoded = encode_labels(score[:_temp_size])
 
     perm = np.random.permutation(n)
     n_train = int(np.floor(0.8*n))
-    train_feature_1 = feature_1[perm][:n_train]
-    train_feature_2 = feature_2[perm][:n_train]
+    train_features = features[perm][:n_train]
     train_score_encoded = score_encoded[perm][:n_train]
-    dev_feature_1 = feature_1[perm][n_train:]
-    dev_feature_2 = feature_2[perm][n_train:]
+    dev_features = features[perm][n_train:]
     dev_score_encoded = score_encoded[perm][n_train:]
     dev_score = np.array(score)[perm][n_train:]
 
@@ -128,35 +133,22 @@ with graph.as_default():
         tf.int32, 
         [None, None], 
         'sick_scores')
-    sick_feature_1 = tf.placeholder(
+    sick_features = tf.placeholder(
         tf.float32, 
         [None, None], 
-        'sick_feature_1')
-    sick_feature_2 = tf.placeholder(
-        tf.float32, 
-        [None, None], 
-        'sick_feature_2')  
+        'features')
 
-    b_1 = tf.get_variable('sick_bias_1', 
-        [_hidden_size], 
-        tf.float32, 
-        initializer = initializer)
-    b_2 = tf.get_variable('sick_bias_2', 
+
+    b = tf.get_variable('sick_bias', 
         [5], 
         tf.float32, 
         initializer = initializer)
-    W_1 = tf.get_variable('sick_weight_1', 
-        [model.para.hidden_size, _hidden_size], 
+
+    W = tf.get_variable('sick_weight', 
+        [9600, 5], 
         tf.float32, 
         initializer = initializer)
-    W_2 = tf.get_variable('sick_weight_2', 
-        [model.para.hidden_size, _hidden_size], 
-        tf.float32, 
-        initializer = initializer)
-    W_3 = tf.get_variable('sick_weight_3', 
-        [_hidden_size, 5], 
-        tf.float32, 
-        initializer = initializer)
+
     r = tf.reshape(tf.range(1, 6, 1, 
         dtype = tf.float32), 
         [-1, 1])
@@ -164,17 +156,18 @@ with graph.as_default():
         name = 'global_step', 
         trainable = False)
 
-    hidden = tf.sigmoid(tf.matmul(sick_feature_1, W_1) + 
-        tf.matmul(sick_feature_2, W_2) + b_1)
-    logits = tf.matmul(hidden, W_3) + b_2
+    logits = tf.matmul(sick_features, W) + b
+
+    all_vars = tf.trainable_variables() 
+    l2_reg = tf.add_n([ tf.nn.l2_loss(v) for v in all_vars if 'bias' not in v.name ]) * _L2
     loss = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits(
             labels = sick_scores, 
-            logits=logits))
+            logits=logits)) + l2_reg
     opt_op = tf.contrib.layers.optimize_loss(
         loss = loss, 
         learning_rate = _learning_rate, 
-        optimizer = 'Adagrad', 
+        optimizer = 'Adam', 
         global_step = global_step) 
     prediction = tf.matmul(tf.nn.softmax(logits), r)
 
@@ -182,20 +175,17 @@ with graph.as_default():
         tf.global_variables_initializer().run(session = sess)
         for epoch in range(_epochs):
             perm = np.random.permutation(n_train)
-            feature_1_perm = train_feature_1[perm]
-            feature_2_perm = train_feature_2[perm]
+            features_perm = features[perm]
             score_encoded_perm = train_score_encoded[perm]
             avg_loss = 0
             steps = n_train//_batch_size
             for step in range(steps):
                 begin = step * _batch_size
                 end = (step + 1) * _batch_size
-                batch_feature_1 = feature_1_perm[begin : end]
-                batch_feature_2 = feature_2_perm[begin : end]
+                batch_features = features_perm[begin : end]
                 batch_score_encoded = score_encoded_perm[begin : end]
                 train_dict = {sick_scores: batch_score_encoded,
-                              sick_feature_1: batch_feature_1,
-                              sick_feature_2: batch_feature_2}
+                              sick_features: batch_features}
                 _, batch_loss, batch_prediction = sess.run(
                     [opt_op, loss, prediction], 
                     feed_dict=train_dict)
@@ -204,8 +194,7 @@ with graph.as_default():
 
             if epoch % 10==0:
                 dev_dict = {sick_scores: dev_score_encoded,
-                        sick_feature_1: dev_feature_1,
-                        sick_feature_2: dev_feature_2}
+                        sick_features: dev_features}
                 _, dev_loss, dev_prediction = sess.run(
                     [opt_op, loss, prediction], 
                     feed_dict=dev_dict)
