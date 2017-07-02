@@ -120,26 +120,6 @@ class Skipthought_model(object):
             initial_state = self.encoded_sentences, 
             reuse_logits = True)
 
-        # print('Using %s loss' % self.para.loss_function)
-        # if self.para.loss_function == 'softmax':
-        #     post_loss = self.get_softmax_loss(
-        #         self.post_labels, 
-        #         post_logits_projected) 
-        #     pre_loss = self.get_softmax_loss(
-        #         self.pre_labels, 
-        #         pre_logits_projected) 
-        # else:
-        #     post_loss = self.get_sampled_softmax_loss(
-        #         self.post_labels, 
-        #         post_logits, 
-        #         proj_variables = self.proj, 
-        #         name='postcoder') 
-        #     pre_loss = self.get_sampled_softmax_loss(
-        #         self.pre_labels, 
-        #         pre_logits, 
-        #         proj_variables = self.proj, 
-        #         name='precoder')
-
         self.loss = pre_loss + post_loss
         self.eta = tf.train.exponential_decay(
             self.para.learning_rate, 
@@ -155,23 +135,6 @@ class Skipthought_model(object):
             clip_gradients=self.para.clip_gradient_norm, 
             learning_rate_decay_fn=None, 
             summaries = ['loss']) 
-
-        # Decode sentences at prediction time
-        # post_predict = self.decoder(
-        #     decoder_inputs = self.post_inputs_embedded, 
-        #     encoder_state = self.encoded_sentences, 
-        #     name = 'postcoder', 
-        #     proj_variables = self.proj, 
-        #     lengths = self.post_sentences_lengths, 
-        #     train = False)
-        # pre_predict = self.decoder(
-        #     decoder_inputs = self.pre_inputs_embedded, 
-        #     encoder_state = self.encoded_sentences, 
-        #     name = 'precoder', 
-        #     proj_variables = self.proj, 
-        #     lengths = self.pre_sentences_lengths, 
-        #     train = False)
-        # self.predict = [pre_predict, post_predict]
 
     def encoder(self, sentences_embedded, sentences_lengths, bidirectional = False):
         with tf.variable_scope("encoder") as varscope:
@@ -518,18 +481,18 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 200, 
-        hidden_size = 400, 
+    paras = Skipthought_para(embedding_size = 620, 
+        hidden_size = 2400, 
         hidden_layers = 1, 
-        batch_size = 32, 
+        batch_size = 512, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.008, 
+        learning_rate = 0.0008, 
         bidirectional = False,
         loss_function = 'softmax',
         sampled_words = 25,
         decay_steps = 50000,
         decay = 0.8,
-        predict_step = 5,
+        predict_step = 100,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0)
@@ -575,27 +538,27 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    # paras = make_paras('./models/toronto_n3/')
-    # preprocess(
-    #     corpus_name = 'toronto', 
-    #     model_path = './models/toronto_n3/',
-    #     corpus_path = './corpus/toronto/', 
-    #     final_path = './training_data/toronto/',
-    #     vocab_size = 20000, 
-    #     max_sent_len = paras.max_sent_len)
-    # train(model_path = './models/toronto_n3/',
-        # training_data_path = './training_data/toronto/')
-
-    paras = make_paras('./models/skipthought_gingerbread/')
+    paras = make_paras('./models/toronto_n4/')
     preprocess(
-        corpus_name = 'gingerbread', 
-        model_path = './models/skipthought_gingerbread/',
-        corpus_path = './corpus/gingerbread/', 
-        final_path = './training_data/gingerbread/',
+        corpus_name = 'toronto', 
+        model_path = './models/toronto_n4/',
+        corpus_path = './corpus/toronto/', 
+        final_path = './training_data/toronto/',
         vocab_size = 20000, 
         max_sent_len = paras.max_sent_len)
-    train(model_path = './models/skipthought_gingerbread/',
-        training_data_path = './training_data/gingerbread/')
+    # train(model_path = './models/toronto_n4/',
+        # training_data_path = './training_data/toronto/')
+
+    # paras = make_paras('./models/skipthought_gingerbread/')
+    # preprocess(
+    #     corpus_name = 'gingerbread', 
+    #     model_path = './models/skipthought_gingerbread/',
+    #     corpus_path = './corpus/gingerbread/', 
+    #     final_path = './training_data/gingerbread/',
+    #     vocab_size = 20000, 
+    #     max_sent_len = paras.max_sent_len)
+    # train(model_path = './models/skipthought_gingerbread/',
+    #     training_data_path = './training_data/gingerbread/')
     # test('./models/n1/', 1)
 
 
