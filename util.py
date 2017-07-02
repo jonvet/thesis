@@ -30,7 +30,7 @@ def finalise_vocab(raw_vocab, vocab_size):
 
     sorted_vocab = sorted(raw_vocab.items(), key=operator.itemgetter(1))
     sorted_vocab = sorted_vocab[-vocab_size:]
-    final_vocab = {'<PAD>': 0, '<OOV>': 1, '<GO>': 2, '<END>': 3}
+    final_vocab = {'<PAD>': 0, '<OOV>': 1, '<END>': 2}
     for word in sorted_vocab:
         final_vocab[word[0]] = len(final_vocab)
     return final_vocab
@@ -96,6 +96,8 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
         dec_go_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
         dec_end_sentences = np.full([lines, max_sent_len + 2], dictionary['<PAD>'], dtype=np.int32)
         sentence_lengths = np.full([lines], 0, dtype=np.int32)
+        dec_masks = np.full([lines, max_sent_len + 2], 0, dtype=np.int32)
+        
     else:
         enc_sentences = np.full([lines, max_sent_len], dictionary['<PAD>'], dtype=np.int32)
         sentence_lengths = []
@@ -115,13 +117,13 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
                     words.append(token_id)
                 sentence_lengths[i] = min(len(sentence),max_sent_len)
                 enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
-                dec_go_sentences[i, 0] = dictionary['<GO>']
                 dec_go_sentences[i, 1:min(len(sentence),max_sent_len)+1] = words[:min(len(sentence),max_sent_len)]
                 dec_go_sentences[i, min(len(sentence),max_sent_len)+1] = dictionary['<END>']
                 dec_end_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
                 dec_end_sentences[i, min(len(sentence),max_sent_len)] = dictionary['<END>']
+                dec_masks[i, 0:min(len(sentence),max_sent_len)+1] = 1
                 i += 1
-        return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences
+        return sentence_lengths, max_sent_len + 2, enc_sentences, dec_go_sentences, dec_end_sentences, dec_masks
     
     else:
         with open(path, 'r') as f:
@@ -135,10 +137,9 @@ def sent_to_int(path, dictionary, max_sent_len, decoder=False):
                     else:
                         token_id = dictionary[word]
                     words.append(token_id)
-                sentence_lengths[i] = min(len(sentence),max_sent_len)
                 enc_sentences[i, 0:min(len(sentence),max_sent_len)] = words[:min(len(sentence),max_sent_len)]
                 i += 1
-        return sentence_lengths, max_sent_len, enc_sentences, dec_go_sentences, dec_end_sentences
+        return max_sent_len, enc_sentences, dec_go_sentences, dec_end_sentences
 
 
 def sick_encode(sentences, dictionary, embeddings = None):

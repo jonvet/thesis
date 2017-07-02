@@ -68,17 +68,6 @@ class Skipthought_model(object):
             name = 'global_step', 
             trainable = False)
 
-        with tf.variable_scope("output_projection") as varscope:
-            self.W = tf.get_variable('weight', 
-                [self.para.hidden_size, self.vocabulary_size], 
-                tf.float32, 
-                initializer = self.initializer)
-            self.b = tf.get_variable('bias', 
-                [self.vocabulary_size], 
-                tf.float32, 
-                initializer = self.initializer)
-        self.proj = (self.W, self.b)
-
         self.sentences = tf.placeholder(tf.int32, 
             [None, None], 
             "sentences")
@@ -92,9 +81,9 @@ class Skipthought_model(object):
         self.post_labels = tf.placeholder(tf.int32, 
             [None, None], 
             "post_labels")
-        self.post_sentences_lengths = tf.placeholder(tf.int32, 
-            [None], 
-            "post_sentences_lengths")
+        self.post_sentences_masks = tf.placeholder(tf.int32, 
+            [None, None], 
+            "post_sentences_masks")
 
         self.pre_inputs = tf.placeholder(tf.int32, 
             [None, None], 
@@ -102,53 +91,54 @@ class Skipthought_model(object):
         self.pre_labels = tf.placeholder(tf.int32, 
             [None, None], 
             "pre_labels")
-        self.pre_sentences_lengths = tf.placeholder(tf.int32, 
-            [None], 
-            "pre_sentences_lengths")
+        self.pre_sentences_masks = tf.placeholder(tf.int32, 
+            [None, None], 
+            "pre_sentences_masks")
 
-        self.sentences_embedded = self.embed_data(self.sentences) 
-        self.post_inputs_embedded = self.embed_data(self.post_inputs)
-        self.pre_inputs_embedded = self.embed_data(self.pre_inputs)
+        self.sentences_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.sentences)
+        self.post_inputs_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.post_inputs)
+        self.pre_inputs_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.pre_inputs)
 
-        self.encoded_sentences = self.encoder(self.sentences_embedded, 
+        self.encoded_sentences = self.encoder(
+            self.sentences_embedded, 
             self.sentences_lengths, 
             self.para.bidirectional)
 
-        post_logits_projected, post_logits = self.decoder(
-            decoder_inputs = self.post_inputs_embedded, 
-            encoder_state = self.encoded_sentences, 
-            name = 'postcoder', 
-            proj_variables = self.proj, 
-            lengths = self.post_sentences_lengths, 
-            train = True)
-        
-        pre_logits_projected, pre_logits = self.decoder(
-            decoder_inputs = self.pre_inputs_embedded, 
-            encoder_state = self.encoded_sentences, 
-            name = 'precoder', 
-            proj_variables = self.proj, 
-            lengths = self.pre_sentences_lengths, 
-            train = True)
-        
-        print('Using %s loss' % self.para.loss_function)
-        if self.para.loss_function == 'softmax':
-            post_loss = self.get_softmax_loss(
-                self.post_labels, 
-                post_logits_projected) 
-            pre_loss = self.get_softmax_loss(
-                self.pre_labels, 
-                pre_logits_projected) 
-        else:
-            post_loss = self.get_sampled_softmax_loss(
-                self.post_labels, 
-                post_logits, 
-                proj_variables = self.proj, 
-                name='postcoder') 
-            pre_loss = self.get_sampled_softmax_loss(
-                self.pre_labels, 
-                pre_logits, 
-                proj_variables = self.proj, 
-                name='precoder')
+        self.pre_predict, pre_loss, self.pre_output = self.decoder(
+            name = "precoder", 
+            decoder_input = self.pre_inputs_embedded,
+            targets = self.pre_labels, 
+            mask = self.pre_sentences_masks,
+            initial_state = self.encoded_sentences, 
+            reuse_logits = False)
+
+        self.post_predict, post_loss, self.post_output = self.decoder(
+            name = "postcoder", 
+            decoder_input = self.post_inputs_embedded,
+            targets = self.post_labels, 
+            mask = self.post_sentences_masks,
+            initial_state = self.encoded_sentences, 
+            reuse_logits = True)
+
+        # print('Using %s loss' % self.para.loss_function)
+        # if self.para.loss_function == 'softmax':
+        #     post_loss = self.get_softmax_loss(
+        #         self.post_labels, 
+        #         post_logits_projected) 
+        #     pre_loss = self.get_softmax_loss(
+        #         self.pre_labels, 
+        #         pre_logits_projected) 
+        # else:
+        #     post_loss = self.get_sampled_softmax_loss(
+        #         self.post_labels, 
+        #         post_logits, 
+        #         proj_variables = self.proj, 
+        #         name='postcoder') 
+        #     pre_loss = self.get_sampled_softmax_loss(
+        #         self.pre_labels, 
+        #         pre_logits, 
+        #         proj_variables = self.proj, 
+        #         name='precoder')
 
         self.loss = pre_loss + post_loss
         self.eta = tf.train.exponential_decay(
@@ -167,24 +157,21 @@ class Skipthought_model(object):
             summaries = ['loss']) 
 
         # Decode sentences at prediction time
-        post_predict = self.decoder(
-            decoder_inputs = self.post_inputs_embedded, 
-            encoder_state = self.encoded_sentences, 
-            name = 'postcoder', 
-            proj_variables = self.proj, 
-            lengths = self.post_sentences_lengths, 
-            train = False)
-        pre_predict = self.decoder(
-            decoder_inputs = self.pre_inputs_embedded, 
-            encoder_state = self.encoded_sentences, 
-            name = 'precoder', 
-            proj_variables = self.proj, 
-            lengths = self.pre_sentences_lengths, 
-            train = False)
-        self.predict = [pre_predict, post_predict]
-
-    def embed_data(self, data):
-        return tf.nn.embedding_lookup(self.word_embeddings, data)
+        # post_predict = self.decoder(
+        #     decoder_inputs = self.post_inputs_embedded, 
+        #     encoder_state = self.encoded_sentences, 
+        #     name = 'postcoder', 
+        #     proj_variables = self.proj, 
+        #     lengths = self.post_sentences_lengths, 
+        #     train = False)
+        # pre_predict = self.decoder(
+        #     decoder_inputs = self.pre_inputs_embedded, 
+        #     encoder_state = self.encoded_sentences, 
+        #     name = 'precoder', 
+        #     proj_variables = self.proj, 
+        #     lengths = self.pre_sentences_lengths, 
+        #     train = False)
+        # self.predict = [pre_predict, post_predict]
 
     def encoder(self, sentences_embedded, sentences_lengths, bidirectional = False):
         with tf.variable_scope("encoder") as varscope:
@@ -228,102 +215,45 @@ class Skipthought_model(object):
     # def output_fn(outputs):
     #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
 
-    def decoder(self, decoder_inputs, encoder_state, name, proj_variables, lengths= None, train = True):
+    def decoder(self, name, decoder_input, targets, mask, initial_state, reuse_logits):
 
-        W, b = proj_variables
-        def output_fn(x):
-            return tf.matmul(x, W) + b
+        cell = NoNormGRUCell(
+            self.para.hidden_size,
+            w_initializer=self.uniform_initializer,
+            u_initializer=random_orthonormal_initializer,
+            b_initializer=tf.constant_initializer(0.0))
 
-        def get_biases(scope, encoder_state):
-            self.c_z_r = tf.get_variable(scope +'/c_z_r', [self.para.hidden_size, 2*self.para.hidden_size], tf.float32, initializer = self.initializer)
-            self.c_h = tf.get_variable(scope +'/c_h', [self.para.hidden_size, self.para.hidden_size], tf.float32, initializer = self.initializer)
-            b_z_r = tf.matmul(encoder_state, self.c_z_r)
-            b_h = tf.matmul(encoder_state, self.c_h)
-            return (b_z_r, b_h)
+        with tf.variable_scope(name) as scope:
+      
+            length = tf.reduce_sum(mask, 1, name="length")
+            decoder_output, _ = tf.nn.dynamic_rnn(
+                cell=cell,
+                inputs=decoder_input,
+                sequence_length=length,
+                initial_state=initial_state,
+                scope=scope)
 
-        if train:
-            with tf.variable_scope(name, reuse=False) as varscope:
-                # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)     
-                # dec_cell = gru_cell.LayerNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                # dec_cell = NoNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                dec_cell = b_NoNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.uniform_initializer,
-                    u_initializer=random_orthonormal_initializer,
-                    b_initializer=tf.constant_initializer(0.0),
-                    encoded_sentences = encoder_state)
+        decoder_output_reshaped = tf.reshape(decoder_output, [-1, self.para.hidden_size])
+        targets = tf.reshape(targets, [-1])
+        weights = tf.to_float(tf.reshape(mask, [-1]))
 
-                # biases = get_biases(name, encoder_state)
-                # dec_cell = b_NoNormGRUCell2(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0),
-                #     biases = biases)
+        with tf.variable_scope("logits", reuse=reuse_logits) as scope:
+            logits = tf.contrib.layers.fully_connected(
+                inputs=decoder_output_reshaped,
+                num_outputs=self.vocabulary_size,
+                activation_fn=None,
+                weights_initializer=self.uniform_initializer,
+                scope=scope)
 
-                dynamic_fn_train = tf.contrib.seq2seq.simple_decoder_fn_train(encoder_state)
-                outputs_train, _, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(
-                    dec_cell, 
-                    decoder_fn = dynamic_fn_train, 
-                    inputs = decoder_inputs, 
-                    sequence_length = lengths, 
-                    scope = varscope) # outputs_train: [batch_size, max_sent_len, hidden_size]
-                outputs_train_reshaped = tf.reshape(outputs_train, [-1, self.para.hidden_size])
-                logits = output_fn(outputs_train_reshaped)
-                logits_projected = tf.reshape(
-                    logits, 
-                    [self.para.batch_size, tf.reduce_max(lengths), self.vocabulary_size]) 
-                    # logits_projected: [batch_size, max_sent_len, hidden_size]
-                return logits_projected, outputs_train
-        else:
-            with tf.variable_scope(name, reuse=True) as varscope:
-                # dec_cell = tf.contrib.rnn.GRUCell(self.para.embedding_size)
-                # dec_cell = gru_cell.LayerNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                # dec_cell = NoNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                dec_cell = b_NoNormGRUCell(
-                    self.para.hidden_size,
-                    w_initializer=self.uniform_initializer,
-                    u_initializer=random_orthonormal_initializer,
-                    b_initializer=tf.constant_initializer(0.0),
-                    encoded_sentences = encoder_state)
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=targets, 
+            logits=logits)
+        loss = tf.reduce_mean(loss * weights)
 
-                # biases = get_biases(name, encoder_state)
-                # dec_cell = b_NoNormGRUCell2(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0),
-                #     biases = biases)
+        predict = tf.arg_max(logits, 1)
 
-                dynamic_fn_inference = tf.contrib.seq2seq.simple_decoder_fn_inference(
-                    output_fn =output_fn, 
-                    encoder_state = encoder_state, 
-                    embeddings = self.word_embeddings, 
-                    start_of_sequence_id = 2, 
-                    end_of_sequence_id = 3, 
-                    maximum_length = self.para.max_sent_len, 
-                    num_decoder_symbols = self.vocabulary_size) 
-                logits_inference, _, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(
-                    dec_cell, 
-                    decoder_fn = dynamic_fn_inference, 
-                    scope = varscope) # output dimension: [batch_size, max_sent_len, vocab_size]
-                return tf.arg_max(logits_inference, 2)
+        return predict, loss, decoder_output
+        
     
     def get_softmax_loss(self, labels, logits):
         return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
@@ -377,30 +307,51 @@ class Skipthought_model(object):
     def evaluate(self, index = None):
         i = index if index != None else np.random.randint(len(self.enc_data))
         print('\nOriginal sequence:\n')
-        print(self.print_sentence(self.pre_data[i, 1:], self.pre_lengths[i]-1))
+        print(self.print_sentence(self.pre_data[i, 1:], np.sum(self.pre_masks, axis=1)[i]-1))
         print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
-        print(self.print_sentence(self.post_data[i, 1:], self.post_lengths[i]-1))
+        print(self.print_sentence(self.post_data[i, 1:], np.sum(self.post_masks, axis=1)[i]-1))
         test_enc_lengths = np.expand_dims(self.enc_lengths[i], 0)
         test_enc_inputs = np.expand_dims(self.enc_data[i], 0)
-        test_post_lengths = np.expand_dims(self.post_lengths[i], 0)
-        test_post_inputs = np.expand_dims(self.post_data[i], 0)
-        test_post_labels = np.expand_dims(self.post_lab[i], 0)
-        test_pre_lengths = np.expand_dims(self.pre_lengths[i], 0)
-        test_pre_inputs = np.expand_dims(self.pre_data[i], 0)
-        test_pre_labels = np.expand_dims(self.pre_lab[i], 0)
-        test_dict = {self.sentences_lengths: test_enc_lengths,
-                    self.sentences: test_enc_inputs, 
-                    self.post_sentences_lengths: test_post_lengths,
-                    self.post_inputs: test_post_inputs,
-                    self.post_labels: test_post_labels,
-                    self.pre_sentences_lengths: test_pre_lengths,
-                    self.pre_inputs: test_pre_inputs,
-                    self.pre_labels: test_pre_labels}
-        pre_prediction, post_prediction = self.sess.run([self.predict], feed_dict=test_dict)[0]
+        test_encoder_state = self.sess.run(
+            self.encoded_sentences, 
+            feed_dict={self.sentences: test_enc_inputs, self.sentences_lengths: test_enc_lengths})
+
+        decoder_state = test_encoder_state
+        decoder_input = np.array([0])
+        done = False
+        sentence = []
+        while done == False:
+            l = len(sentence) + 1
+            test_dict = {
+                self.pre_sentences_masks: np.array([[l]]),
+                self.encoded_sentences: decoder_state,
+                self.pre_inputs: np.array([decoder_input])}
+            decoder_input, decoder_state = self.sess.run(
+                [self.pre_predict,  self.pre_output[0]], 
+                feed_dict=test_dict)
+            sentence.append(decoder_input[0])
+            done = True if (decoder_input == 2 or l > self.para.max_sent_len) else False
+
         print('\nPredicted previous and following sequence around original sentence:\n')
-        print(self.print_sentence(pre_prediction[0], len(pre_prediction[0])))
+        print(self.print_sentence(sentence, len(sentence)))
         print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
-        print(self.print_sentence(post_prediction[0], len(post_prediction[0])))
+
+        decoder_state = test_encoder_state
+        decoder_input = np.array([0])
+        done = False
+        sentence = []
+        while done == False:
+            l = len(sentence) + 1
+            test_dict = {
+                self.post_sentences_masks: np.array([[l]]),
+                self.encoded_sentences: decoder_state,
+                self.post_inputs: np.array([decoder_input])}
+            decoder_input, decoder_state = self.sess.run(
+                [self.post_predict,  self.post_output[0]], 
+                feed_dict=test_dict)
+            sentence.append(decoder_input[0])
+            done = True if (decoder_input == 2 or l > self.para.max_sent_len) else False
+        print(self.print_sentence(sentence, len(sentence)))
 
     def encode(self, sentences, lengths):
         encode_dict = {self.sentences: sentences,
@@ -442,10 +393,10 @@ class Skipthought_model(object):
             perm = np.random.permutation(self.corpus_length)
             enc_lengths_perm = self.enc_lengths[perm]
             enc_data_perm = self.enc_data[perm]
-            post_lengths_perm = self.post_lengths[perm]
+            post_masks_perm = np.array(self.post_masks)[perm]
             post_inputs_perm = np.array(self.post_data)[perm]
             post_labels_perm = np.array(self.post_lab)[perm]
-            pre_lengths_perm = self.pre_lengths[perm]
+            pre_masks_perm = np.array(self.pre_masks)[perm]
             pre_inputs_perm = np.array(self.pre_data)[perm]
             pre_labels_perm = np.array(self.pre_lab)[perm]
             
@@ -455,20 +406,22 @@ class Skipthought_model(object):
                 end = (step + 1) * self.para.batch_size
                 batch_enc_lengths = enc_lengths_perm[begin : end]
                 batch_enc_inputs = enc_data_perm[begin : end]
-                batch_post_lengths = post_lengths_perm[begin : end]
-                batch_post_inputs = post_inputs_perm[begin:end, :np.max(batch_post_lengths)]
-                batch_post_labels = post_labels_perm[begin:end, :np.max(batch_post_lengths)]
-                batch_pre_lengths = pre_lengths_perm[begin : end]
-                batch_pre_inputs = pre_inputs_perm[begin:end, :np.max(batch_pre_lengths)]
-                batch_pre_labels = pre_labels_perm[begin:end, :np.max(batch_pre_lengths)]
-                train_dict = {self.sentences_lengths: batch_enc_lengths,
-                            self.sentences: batch_enc_inputs, 
-                            self.post_sentences_lengths: batch_post_lengths,
-                            self.post_inputs: batch_post_inputs,
-                            self.post_labels: batch_post_labels,
-                            self.pre_sentences_lengths: batch_pre_lengths,
-                            self.pre_inputs: batch_pre_inputs,
-                            self.pre_labels: batch_pre_labels}
+                batch_post_masks = post_masks_perm[begin : end]
+                batch_post_inputs = post_inputs_perm[begin:end]
+                batch_post_labels = post_labels_perm[begin:end]
+                batch_pre_masks = pre_masks_perm[begin : end]
+                batch_pre_inputs = pre_inputs_perm[begin:end]
+                batch_pre_labels = pre_labels_perm[begin:end]
+
+                train_dict = {
+                    self.sentences_lengths: batch_enc_lengths,
+                    self.sentences: batch_enc_inputs, 
+                    self.post_sentences_masks: batch_post_masks,
+                    self.post_inputs: batch_post_inputs,
+                    self.post_labels: batch_post_labels,
+                    self.pre_sentences_masks: batch_pre_masks,
+                    self.pre_inputs: batch_pre_inputs,
+                    self.pre_labels: batch_pre_labels}
                 _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
 
                 current_step = self.global_step.eval(session = self.sess)
@@ -547,32 +500,36 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     Create datasets for encoder and decoders
     '''
 
-    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab = sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
+    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab, dec_masks = sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
     enc_lengths = sent_lengths[1:-1] 
     enc_data = enc_data[1:-1]
-    post_lengths = sent_lengths[2:] + 1
+
     post_data = dec_data[2:]
     post_lab = dec_lab[2:]
-    pre_lengths = sent_lengths[:-2] + 1
+    post_masks = dec_masks[2:]
+
     pre_data = dec_data[:-2]
     pre_lab = dec_lab[:-2]
-    return [corpus_name, max_sent_len, enc_lengths, enc_data, post_lengths, post_data, post_lab, pre_lengths, pre_data, pre_lab]
+    pre_masks = dec_masks[:-2]
+
+
+    return [corpus_name, max_sent_len, enc_lengths, enc_data, post_data, post_lab, pre_data, pre_lab, post_masks, pre_masks]
 
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 620, 
-        hidden_size = 2400, 
+    paras = Skipthought_para(embedding_size = 200, 
+        hidden_size = 400, 
         hidden_layers = 1, 
-        batch_size = 512, 
+        batch_size = 32, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.0008, 
+        learning_rate = 0.008, 
         bidirectional = False,
         loss_function = 'softmax',
         sampled_words = 25,
         decay_steps = 50000,
         decay = 0.8,
-        predict_step = 100,
+        predict_step = 5,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0)
@@ -598,9 +555,9 @@ def train(model_path, training_data_path):
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
-            model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
+            model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
             model.train()
-        model.save_model(model.path + '/saved_models/', epoch)
+        # model.save_model(model.path + '/saved_models/', epoch)
         model.epoch += 1
 
 def test(path, epoch):
@@ -613,12 +570,12 @@ def test(path, epoch):
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
     model.load_model(path, epoch)
-    model.enc_lengths, model.enc_data, model.post_lengths, model.post_data, model.post_lab, model.pre_lengths, model.pre_data, model.pre_lab = data[2:]
+    model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
     model.evaluate(1)
 
 if __name__ == '__main__':
 
-    paras = make_paras('./models/toronto_n3/')
+    # paras = make_paras('./models/toronto_n3/')
     # preprocess(
     #     corpus_name = 'toronto', 
     #     model_path = './models/toronto_n3/',
@@ -626,18 +583,19 @@ if __name__ == '__main__':
     #     final_path = './training_data/toronto/',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = './models/toronto_n3/',
-        training_data_path = './training_data/toronto/')
+    # train(model_path = './models/toronto_n3/',
+        # training_data_path = './training_data/toronto/')
 
-    # paras = make_paras('./models/skipthought_gingerbread/')
-    # preprocess(
-    #     corpus_name = 'gingerbread', 
-    #     model_path = './models/skipthought_gingerbread/',
-    #     corpus_path = './corpus/gingerbread/', 
-    #     final_path = './training_data/gingerbread/',
-    #     vocab_size = 20000, 
-    #     max_sent_len = paras.max_sent_len)
-    # train(model_path = './models/skipthought_gingerbread/',
-        # training_data_path = './training_data/gingerbread/')
+    paras = make_paras('./models/skipthought_gingerbread/')
+    preprocess(
+        corpus_name = 'gingerbread', 
+        model_path = './models/skipthought_gingerbread/',
+        corpus_path = './corpus/gingerbread/', 
+        final_path = './training_data/gingerbread/',
+        vocab_size = 20000, 
+        max_sent_len = paras.max_sent_len)
+    train(model_path = './models/skipthought_gingerbread/',
+        training_data_path = './training_data/gingerbread/')
     # test('./models/n1/', 1)
+
 
