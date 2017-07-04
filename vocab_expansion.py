@@ -62,7 +62,9 @@ def _expand_vocabulary(skip_thoughts_emb, skip_thoughts_vocab, word2vec):
     # Create the expanded vocabulary.
     print("Creating embeddings for expanded vocabulary")
     embedding_map = collections.OrderedDict()
-    for w in word2vec.vocab:
+    print('Length of word2vec vocabulary: %d\n' % len(word2vec.vocab))
+    for i, w in enumerate(word2vec.vocab):
+        print('\rEmbedding %d' %(i+1), end='   ')
     # Ignore words with underscores (spaces).
         if "_" not in w:
             w_emb = model.predict(word2vec[w].reshape(1, -1))
@@ -89,7 +91,7 @@ def _expand_vocabulary(skip_thoughts_emb, skip_thoughts_vocab, word2vec):
 
     return expanded_vocab, expanded_embeddings
 
-path = './models/toronto_n2/'
+path = './models/toronto_n4/'
 
 print('Loading trained skipthought word embeddings')
 with open(path + 'paras.pkl', 'rb') as f:

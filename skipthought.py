@@ -539,15 +539,15 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     paras = make_paras('./models/toronto_n4/')
-    preprocess(
-        corpus_name = 'toronto', 
-        model_path = './models/toronto_n4/',
-        corpus_path = './corpus/toronto/', 
-        final_path = './training_data/toronto/',
-        vocab_size = 20000, 
-        max_sent_len = paras.max_sent_len)
-    # train(model_path = './models/toronto_n4/',
-        # training_data_path = './training_data/toronto/')
+    # preprocess(
+    #     corpus_name = 'toronto', 
+    #     model_path = './models/toronto_n4/',
+    #     corpus_path = './corpus/toronto/', 
+    #     final_path = './training_data/toronto/',
+    #     vocab_size = 20000, 
+    #     max_sent_len = paras.max_sent_len)
+    train(model_path = './models/toronto_n4/',
+        training_data_path = './training_data/toronto/')
 
     # paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess(
