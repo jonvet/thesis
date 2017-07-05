@@ -21,7 +21,7 @@ from gru_cell import b_NoNormGRUCell2
 class Skipthought_para(object):
 
     def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, 
-            bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm):
+            bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm, save_every):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
@@ -37,6 +37,7 @@ class Skipthought_para(object):
         self.max_sent_len = max_sent_len
         self.uniform_init_scale = uniform_init_scale
         self.clip_gradient_norm = clip_gradient_norm
+        self.save_every = save_every
 
 class Skipthought_model(object):
 
@@ -104,7 +105,7 @@ class Skipthought_model(object):
             self.sentences_lengths, 
             self.para.bidirectional)
 
-        self.pre_predict, pre_loss, self.pre_output = self.decoder(
+        self.pre_prob, pre_loss, self.pre_output = self.decoder(
             name = "precoder", 
             decoder_input = self.pre_inputs_embedded,
             targets = self.pre_labels, 
@@ -112,7 +113,7 @@ class Skipthought_model(object):
             initial_state = self.encoded_sentences, 
             reuse_logits = False)
 
-        self.post_predict, post_loss, self.post_output = self.decoder(
+        self.post_prob, post_loss, self.post_output = self.decoder(
             name = "postcoder", 
             decoder_input = self.post_inputs_embedded,
             targets = self.post_labels, 
@@ -154,16 +155,16 @@ class Skipthought_model(object):
                 # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
             else:
                 # cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
-                # cell = gru_cell.LayerNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                cell = NoNormGRUCell(
+                cell = gru_cell.LayerNormGRUCell(
                     self.para.hidden_size,
                     w_initializer=self.uniform_initializer,
                     u_initializer=random_orthonormal_initializer,
                     b_initializer=tf.constant_initializer(0.0))
+                # cell = NoNormGRUCell(
+                #     self.para.hidden_size,
+                #     w_initializer=self.uniform_initializer,
+                #     u_initializer=random_orthonormal_initializer,
+                #     b_initializer=tf.constant_initializer(0.0))
                 # cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
                 # cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
                 print('Using one-directional RNN')
@@ -180,7 +181,13 @@ class Skipthought_model(object):
 
     def decoder(self, name, decoder_input, targets, mask, initial_state, reuse_logits):
 
-        cell = NoNormGRUCell(
+        # cell = NoNormGRUCell(
+        #     self.para.hidden_size,
+        #     w_initializer=self.uniform_initializer,
+        #     u_initializer=random_orthonormal_initializer,
+        #     b_initializer=tf.constant_initializer(0.0))
+
+        cell = gru_cell.LayerNormGRUCell(
             self.para.hidden_size,
             w_initializer=self.uniform_initializer,
             u_initializer=random_orthonormal_initializer,
@@ -213,9 +220,10 @@ class Skipthought_model(object):
             logits=logits)
         loss = tf.reduce_mean(loss * weights)
 
-        predict = tf.arg_max(logits, 1)
+        # predict = tf.arg_max(logits, 1)
+        probabilities = tf.nn.softmax(logits)
 
-        return predict, loss, decoder_output
+        return probabilities, loss, decoder_output
         
     
     def get_softmax_loss(self, labels, logits):
@@ -256,18 +264,18 @@ class Skipthought_model(object):
             s = s+self.reverse_vocab[word]+' '
         return s
 
-    def save_model(self, path, epoch):
+    def save_model(self, path, step):
         if not os.path.exists(path):
             os.mkdir(path)
-        self.saver.save(sess = self.sess, save_path = path + '/epoch_%d' % epoch, write_state = False)
+        self.saver.save(sess = self.sess, save_path = path + '/step_%d' % step, write_state = False)
 
-    def load_model(self, path, epoch):
+    def load_model(self, path, step):
         self.sess = tf.Session(graph = self.graph)
         saver = tf.train.Saver()
-        saver.restore(self.sess, path + '/saved_models/epoch_%d' % epoch)
+        saver.restore(self.sess, path + '/saved_models/epoch_%d' % step)
         print('Model restored')
 
-    def evaluate(self, index = None):
+    def evaluate(self, mode = 'max', index = None):
         i = index if index != None else np.random.randint(len(self.enc_data))
         print('\nOriginal sequence:\n')
         print(self.print_sentence(self.pre_data[i, 1:], np.sum(self.pre_masks, axis=1)[i]-1))
@@ -290,9 +298,17 @@ class Skipthought_model(object):
                 self.encoded_sentences: decoder_state,
                 self.pre_inputs: np.array([decoder_input])}
             decoder_input, decoder_state = self.sess.run(
-                [self.pre_predict,  self.pre_output[0]], 
+                [self.pre_prob,  self.pre_output[0]], 
                 feed_dict=test_dict)
-            sentence.append(decoder_input[0])
+            if mode == 'max':
+                decoder_input = np.argmax(decoder_input)
+            else:
+                # words = np.arange(1, self.vocabulary_size+1, 1)
+                # print(decoder_input.shape)
+                # print(self.vocabulary_size+1)
+                decoder_input = np.random.choice(self.vocabulary_size, p = decoder_input[0])
+            sentence.append(decoder_input)
+            decoder_input = np.expand_dims(decoder_input, 0)
             done = True if (decoder_input == 2 or l > self.para.max_sent_len) else False
 
         print('\nPredicted previous and following sequence around original sentence:\n')
@@ -310,9 +326,15 @@ class Skipthought_model(object):
                 self.encoded_sentences: decoder_state,
                 self.post_inputs: np.array([decoder_input])}
             decoder_input, decoder_state = self.sess.run(
-                [self.post_predict,  self.post_output[0]], 
+                [self.post_prob,  self.post_output[0]], 
                 feed_dict=test_dict)
-            sentence.append(decoder_input[0])
+            if mode == 'max':
+                decoder_input = np.argmax(decoder_input)
+            else:
+                # words = np.arange(1, self.vocabulary_size+1, 1)
+                decoder_input = np.random.choice(self.vocabulary_size, p = decoder_input[0])
+            sentence.append(decoder_input)
+            decoder_input = np.expand_dims(decoder_input, 0)
             done = True if (decoder_input == 2 or l > self.para.max_sent_len) else False
         print(self.print_sentence(sentence, len(sentence)))
 
@@ -402,12 +424,18 @@ class Skipthought_model(object):
                     hours = secs//3600
                     minutes = secs / 60 - hours * 60
                     print('\nTime elapsed: %d:%02d hours' % (hours, minutes))
-                    self.evaluate()
+                    print('~~~~~~~~~~ Decoding using argmax~~~~~~~~~~')
+                    self.evaluate(mode='max')
+                    print('~~~~~~~~~~ Decoding by sampling ~~~~~~~~~~')
+                    self.evaluate(mode='sample')
                     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
+                if current_step % self.para.save_every == 0:
+                    self.save_model(self.path + '/saved_models/', current_step)
+
         except KeyboardInterrupt:
             save = input('save?')
             if 'y' in save:
-                self.save_model(self.path + '/saved_models/', self.epoch)
+                self.save_model(self.path + '/saved_models/', self.global_step.eval(session = self.sess))
 
 def random_orthonormal_initializer(shape, dtype=tf.float32, partition_info=None):  # pylint: disable=unused-argument
     """Variable initializer that produces a random orthonormal matrix."""
@@ -484,18 +512,19 @@ def make_paras(path):
     paras = Skipthought_para(embedding_size = 620, 
         hidden_size = 2400, 
         hidden_layers = 1, 
-        batch_size = 512, 
+        batch_size = 128, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0008, 
         bidirectional = False,
         loss_function = 'softmax',
         sampled_words = 25,
-        decay_steps = 50000,
-        decay = 0.8,
-        predict_step = 100,
+        decay_steps = 400000,
+        decay = 0.5,
+        predict_step = 1000,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
-        clip_gradient_norm=5.0)
+        clip_gradient_norm=5.0,
+        save_every=50000)
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
     return paras
@@ -515,12 +544,14 @@ def train(model_path, training_data_path):
     for epoch in range(num_epochs):
         print('\n~~~~~~~ Starting training ~~~~~~~\n')
         print('----- Epoch', epoch, '-----')
+        random_permutation = np.random.permutation(len(data_parts))
+        data_parts = np.array(data_parts)[random_permutation].tolist()
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
             model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
             model.train()
-        # model.save_model(model.path + '/saved_models/', epoch)
+        # model.save_model(model.path + '/saved_models/', model.global_step.eval(session = model.sess))
         model.epoch += 1
 
 def test(path, epoch):
@@ -538,16 +569,16 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    paras = make_paras('./models/toronto_n4/')
-    # preprocess(
-    #     corpus_name = 'toronto', 
-    #     model_path = './models/toronto_n4/',
-    #     corpus_path = './corpus/toronto/', 
-    #     final_path = './training_data/toronto/',
-    #     vocab_size = 20000, 
-    #     max_sent_len = paras.max_sent_len)
-    train(model_path = './models/toronto_n4/',
-        training_data_path = './training_data/toronto/')
+    paras = make_paras('./models/toronto_n5/')
+    preprocess(
+        corpus_name = 'toronto', 
+        model_path = './models/toronto_n5/',
+        corpus_path = '/cluster/project6/mr_corpora/vetterle/toronto_split', 
+        final_path = '/cluster/project6/mr_corpora/vetterle/toronto_train',
+        vocab_size = 20000, 
+        max_sent_len = paras.max_sent_len)
+    # train(model_path = './models/toronto_n5/',
+    #     training_data_path = './training_data/toronto/')
 
     # paras = make_paras('./models/skipthought_gingerbread/')
     # preprocess(
