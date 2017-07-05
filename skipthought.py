@@ -573,8 +573,8 @@ if __name__ == '__main__':
     preprocess(
         corpus_name = 'toronto', 
         model_path = './models/toronto_n5/',
-        corpus_path = '../../cluster/project6/mr_corpora/vetterle/toronto_split', 
-        final_path = '../../cluster/project6/mr_corpora/vetterle/toronto_train',
+        corpus_path = './corpus/toronto_split/', 
+        final_path = './training_data/toronto',
         vocab_size = 20000, 
         max_sent_len = paras.max_sent_len)
     # train(model_path = './models/toronto_n5/',
