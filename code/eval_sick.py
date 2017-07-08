@@ -37,20 +37,24 @@ def prepare_batches(lengths, sentences, b_size):
 # if __name__ == '__main__':
 
 # Parameters for SICK classifier
-_learning_rate = 0.001
+_learning_rate = 0.01
 _epochs = 10000
 _batch_size = 1000
 _train_size = 0.8
 _temp_size = 10000
 _L2 = 0
 _use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-epoch = 1 # Determines which saved model to use
+step = 25000 # Determines which saved model to use
 _keep_prob = 1.0
+_hidden_size = 512
 
 
-path = '../models/toronto_n4/'
+# path = '../models/toronto_n5/'
+path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
+
 
 data = pd.read_csv('../eval/SICK/SICK_train.txt', sep='\t', index_col=0)
+
 sent_all = data.sentence_A.tolist() + data.sentence_B.tolist()
 
 with open(path + 'paras.pkl', 'rb') as f:
@@ -61,7 +65,7 @@ with open(path + 'vocab.pkl', 'rb') as f:
 
 tf.reset_default_graph()
 model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
-model.load_model(path, epoch)
+model.load_model(path, step)
 
 print('Using skipthought model to encode SICK sentences')
 if _use_expanded_vocab:
@@ -167,6 +171,7 @@ with graph.as_default():
 
     logits = tf.nn.dropout(tf.matmul(sick_features, W), keep_prob = _keep_prob) + b
 
+    # logits = tf.contrib.layers.linear(logits, 5)
     all_vars = tf.trainable_variables() 
     l2_reg = tf.add_n([ tf.nn.l2_loss(v) for v in all_vars if 'bias' not in v.name ]) * _L2
     loss = tf.reduce_mean(
@@ -176,7 +181,7 @@ with graph.as_default():
     opt_op = tf.contrib.layers.optimize_loss(
         loss = loss, 
         learning_rate = _learning_rate, 
-        optimizer = 'Adam', 
+        optimizer = 'SGD', 
         global_step = global_step) 
     prediction = tf.matmul(tf.nn.softmax(logits), r)
 
@@ -188,18 +193,27 @@ with graph.as_default():
             score_encoded_perm = train_score_encoded[perm]
             avg_loss = 0
             steps = n_train//_batch_size
-            for step in range(steps):
-                begin = step * _batch_size
-                end = (step + 1) * _batch_size
-                batch_features = features_perm[begin : end]
-                batch_score_encoded = score_encoded_perm[begin : end]
-                train_dict = {sick_scores: batch_score_encoded,
-                              sick_features: batch_features}
-                _, batch_loss, batch_prediction = sess.run(
+            # for step in range(steps):
+            #     begin = step * _batch_size
+            #     end = (step + 1) * _batch_size
+            #     batch_features = features_perm[begin : end]
+            #     batch_score_encoded = score_encoded_perm[begin : end]
+            #     train_dict = {sick_scores: batch_score_encoded,
+            #                   sick_features: batch_features}
+            #     _, batch_loss, batch_prediction = sess.run(
+            #         [opt_op, loss, prediction], 
+            #         feed_dict=train_dict)
+            #     avg_loss += batch_loss/steps
+            #     print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
+                # print(batch_loss)
+
+            train_dict = {sick_scores: score_encoded_perm,
+                              sick_features: features_perm}
+            _, batch_loss, batch_prediction = sess.run(
                     [opt_op, loss, prediction], 
                     feed_dict=train_dict)
-                avg_loss += batch_loss/steps
-                print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
+            avg_loss += batch_loss
+            # print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
 
             if epoch % 1==0:
                 dev_dict = {sick_scores: dev_score_encoded,
@@ -212,6 +226,7 @@ with graph.as_default():
                 se = mse(dev_prediction[:,0], dev_score)
                 print('\nEpoch %d: Train loss: %0.2f, Dev loss: %0.2f, Dev pearson: %0.2f, Dev spearman: %0.2f, Dev MSE: %0.2f\n' 
                     % (epoch, avg_loss, dev_loss, pr, sr, se))
+
 
                 # i = np.random.randint(len(model.sentences_embedded))
                 # print(model.print_sentence(model.sentences_embedded[i], model.enc_lengths[i]))

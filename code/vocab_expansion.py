@@ -28,7 +28,7 @@ import operator
 #                 return np.array( numpy_arrays ), labels_array
 #     return np.array( numpy_arrays ), labels_array
 
-def load_skip_thoughts_embeddings(path, epoch):
+def load_skip_thoughts_embeddings(path, step):
 
     with open(path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
@@ -37,7 +37,7 @@ def load_skip_thoughts_embeddings(path, epoch):
         vocab = vocab, 
         parameters = paras, 
         path = path)
-    model.load_model(path, epoch)
+    model.load_model(path, step)
     embeddings = model.word_embeddings.eval(session = model.sess)
 
     return embeddings
@@ -91,33 +91,35 @@ def _expand_vocabulary(skip_thoughts_emb, skip_thoughts_vocab, word2vec):
 
     return expanded_vocab, expanded_embeddings
 
-path = '../models/toronto_n4/'
+# path = '../models/toronto_n5/'
+path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
 
 print('Loading trained skipthought word embeddings')
 with open(path + 'paras.pkl', 'rb') as f:
     paras = pkl.load(f)
 skipthought_embeddings = load_skip_thoughts_embeddings(
     path = path, 
-    epoch = 0)
+    step = 75000)
 with open(path + 'vocab.pkl', 'rb') as f:
     skipthought_vocab = pkl.load(f)
 
-if not (os.path.exists(path+'expanded_vocab.pkl') & os.path.exists(path+'expanded_embeddings.npy')):
+# if not (os.path.exists(path+'expanded_vocab.pkl') & os.path.exists(path+'expanded_embeddings.npy')):
     
-    print('Loading skipthought vocabulary')
-    sorted_vocab = sorted(skipthought_vocab.items(),
-        key=operator.itemgetter(1))
-    skipthought_vocab = collections.OrderedDict(sorted_vocab)
+print('Loading skipthought vocabulary')
+sorted_vocab = sorted(skipthought_vocab.items(),
+    key=operator.itemgetter(1))
+skipthought_vocab = collections.OrderedDict(sorted_vocab)
 
-    print('Loading word2vec word embeddings')
-    word2vec = gensim.models.KeyedVectors.load_word2vec_format('/Users/Jonas/Documents/dev/GoogleNews-vectors-negative300.bin', binary=True) 
+print('Loading word2vec word embeddings')
+# word2vec = gensim.models.KeyedVectors.load_word2vec_format('/Users/Jonas/Documents/dev/GoogleNews-vectors-negative300.bin', binary=True) 
+word2vec = gensim.models.KeyedVectors.load_word2vec_format('/cluster/project6/mr_corpora/vetterle/word2vec/GoogleNews-vectors-negative300.bin', binary=True)
 
-    expanded_vocab, expanded_embeddings = _expand_vocabulary(
-        skipthought_embeddings, 
-        skipthought_vocab,
-        word2vec)
-else: 
-    print('Expanded vocab and embeddings already exist in %s' % path)
+expanded_vocab, expanded_embeddings = _expand_vocabulary(
+    skipthought_embeddings, 
+    skipthought_vocab,
+    word2vec)
+# else: 
+#     print('Expanded vocab and embeddings already exist in %s' % path)
 
 # encas = model.encoded_sentences.eval(session = model.sess, feed_dict={model.graph.get_tensor_by_name('embedding_lookup:0'): test, model.sentences_lengths: test_lengths})
 

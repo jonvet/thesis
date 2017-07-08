@@ -137,6 +137,8 @@ class Skipthought_model(object):
             learning_rate_decay_fn=None, 
             summaries = ['loss']) 
 
+        self.sess = tf.Session(graph = self.graph)
+
     def encoder(self, sentences_embedded, sentences_lengths, bidirectional = False):
         with tf.variable_scope("encoder") as varscope:
             if bidirectional:
@@ -272,7 +274,7 @@ class Skipthought_model(object):
     def load_model(self, path, step):
         self.sess = tf.Session(graph = self.graph)
         saver = tf.train.Saver()
-        saver.restore(self.sess, path + '/saved_models/epoch_%d' % step)
+        saver.restore(self.sess, path + '/saved_models/step_%d' % step)
         print('Model restored')
 
     def evaluate(self, mode = 'max', index = None):
@@ -353,7 +355,7 @@ class Skipthought_model(object):
         #     tsv_writer.writerow(str(i.encode('utf-8')) +'\n' for i in meta_data)
 
         # Print summary statistics
-        self.sess = tf.Session(graph = self.graph)
+        
         # self.a= tf.contrib.graph_editor.get_tensors(self.graph)
         self.train_loss_writer = tf.summary.FileWriter('./tensorboard/train_loss', self.sess.graph)
         embedding_writer = tf.summary.FileWriter('./tensorboard/', self.sess.graph)
@@ -363,14 +365,13 @@ class Skipthought_model(object):
         embedding.metadata_path = os.path.join('./meta_data.tsv')
         projector.visualize_embeddings(embedding_writer, config)
         self.merged = tf.summary.merge_all()
-        print('\n~~~~~~~ Initializing variables ~~~~~~~\n')
-        tf.global_variables_initializer().run(session = self.sess)
         self.saver = tf.train.Saver()
         self.total_loss = 0
         self.start_time = time.time()
 
     def train(self):
         batch_time = time.time()
+        self.total_loss = 0
         try:
             train_summaryIndex = -1
             self.is_train = True
@@ -407,9 +408,10 @@ class Skipthought_model(object):
                     self.pre_sentences_masks: batch_pre_masks,
                     self.pre_inputs: batch_pre_inputs,
                     self.pre_labels: batch_pre_labels}
-                _, loss_val, batch_summary = self.sess.run([self.opt_op, self.loss, self.merged], feed_dict=train_dict)
+                _, loss_val, batch_summary, current_step = self.sess.run(
+                    [self.opt_op, self.loss, self.merged, self.global_step], 
+                    feed_dict=train_dict)
 
-                current_step = self.global_step.eval(session = self.sess)
                 print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
                 self.train_loss_writer.add_summary(batch_summary, current_step)
                 self.total_loss += loss_val
@@ -509,10 +511,10 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 620, 
-        hidden_size = 2400, 
+    paras = Skipthought_para(embedding_size = 300, 
+        hidden_size = 300, 
         hidden_layers = 1, 
-        batch_size = 128, 
+        batch_size = 5, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0008, 
         bidirectional = False,
@@ -520,17 +522,17 @@ def make_paras(path):
         sampled_words = 25,
         decay_steps = 400000,
         decay = 0.5,
-        predict_step = 1000,
+        predict_step = 10,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0,
-        save_every=50000)
+        save_every=50)
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
     return paras
 
 def train(model_path, training_data_path):
-    tf.reset_default_graph()
+    
     with open(model_path + 'paras.pkl', 'rb') as f:
         paras = pkl.load(f)
     with open(model_path + 'vocab.pkl', 'rb') as f:
@@ -538,7 +540,40 @@ def train(model_path, training_data_path):
     with open(training_data_path + '/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = model_path)
+    tf.global_variables_initializer().run(session = self.sess)
     model.initialise()
+    
+    data_parts = glob.glob(training_data_path + '*.pkl')
+    num_epochs = 1000
+    for epoch in range(num_epochs):
+        print('\n~~~~~~~ Starting training ~~~~~~~\n')
+        print('----- Epoch', epoch, '-----')
+        random_permutation = np.random.permutation(len(data_parts))
+        data_parts = np.array(data_parts)[random_permutation].tolist()
+        for part in data_parts:
+            with open(part, 'rb') as f:
+                data = pkl.load(f)
+            model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
+            model.train()
+        # model.save_model(model.path + '/saved_models/', model.global_step.eval(session = model.sess))
+        model.epoch += 1
+
+def continue_train(model_path, training_data_path, step):
+
+    with open(model_path + 'paras.pkl', 'rb') as f:
+        paras = pkl.load(f)
+    with open(model_path + 'vocab.pkl', 'rb') as f:
+        vocab = pkl.load(f)
+    with open(training_data_path + '/data_0.pkl', 'rb') as f:
+        data = pkl.load(f)
+    model = Skipthought_model(vocab = vocab, parameters = paras, path = model_path)
+    model.load_model(model_path, step)
+    model.initialise()
+    # model.global_step = np.array([step])
+    _ = model.sess.run(
+                    [], 
+                    feed_dict={model.global_step: step})
+    
     data_parts = glob.glob(training_data_path + '*.pkl')
     num_epochs = 1000
     for epoch in range(num_epochs):
@@ -560,7 +595,7 @@ def test(path, epoch):
         paras = pkl.load(f)
     with open(path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open('./training_data/gingerbread/data_0.pkl', 'rb') as f:
+    with open('../training_data/gingerbread/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
     model.load_model(path, epoch)
@@ -569,18 +604,19 @@ def test(path, epoch):
 
 if __name__ == '__main__':
 
-    paras = make_paras('../models/toronto_n5/')
-    preprocess(
-        corpus_name = 'toronto', 
-        model_path = '../models/toronto_n5/',
-        corpus_path = '../corpus/toronto_split/', 
-        final_path = '../training_data/toronto',
-        vocab_size = 20000, 
-        max_sent_len = paras.max_sent_len)
+    tf.reset_default_graph()
+    # paras = make_paras('../models/toronto_n5/')
+    # preprocess(
+    #     corpus_name = 'toronto', 
+    #     model_path = '../models/toronto_n5/',
+    #     corpus_path = '../corpus/toronto_split/', 
+    #     final_path = '../training_data/toronto',
+    #     vocab_size = 20000, 
+    #     max_sent_len = paras.max_sent_len)
     # train(model_path = '../models/toronto_n5/',
     #     training_data_path = '../training_data/toronto/')
 
-    # paras = make_paras('./models/skipthought_gingerbread/')
+    # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(
     #     corpus_name = 'gingerbread', 
     #     model_path = '../models/skipthought_gingerbread/',
@@ -590,6 +626,8 @@ if __name__ == '__main__':
     #     max_sent_len = paras.max_sent_len)
     # train(model_path = '../models/skipthought_gingerbread/',
     #     training_data_path = '../training_data/gingerbread/')
-    # test('../models/n1/', 1)
+
+    continue_train(model_path = '../models/skipthought_gingerbread/',
+        training_data_path = '../training_data/gingerbread/', step =50)
 
 
