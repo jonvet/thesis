@@ -29,8 +29,6 @@ class Skipthought_para(object):
         self.keep_prob_dropout = keep_prob_dropout
         self.learning_rate = learning_rate
         self.bidirectional = bidirectional
-        self.loss_function = loss_function
-        self.sampled_words = sampled_words
         self.decay_steps = decay_steps
         self.decay = decay
         self.predict_step = predict_step
@@ -134,7 +132,6 @@ class Skipthought_model(object):
             learning_rate = self.eta, 
             optimizer = 'Adam', 
             clip_gradients=self.para.clip_gradient_norm, 
-            learning_rate_decay_fn=None, 
             summaries = ['loss']) 
 
         self.sess = tf.Session(graph = self.graph)
@@ -226,38 +223,6 @@ class Skipthought_model(object):
         probabilities = tf.nn.softmax(logits)
 
         return probabilities, loss, decoder_output
-        
-    
-    def get_softmax_loss(self, labels, logits):
-        return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
-
-    def get_sampled_softmax_loss(self, labels, logits, proj_variables, name):
-
-        W, b = proj_variables
-        logits = tf.stack(logits)
-        logits_reshaped = tf.reshape(logits, [-1, self.para.hidden_size])
-        labels_reshaped = tf.reshape(labels, [-1, 1])
-        local_W = tf.cast(W, tf.float32)
-        local_b = tf.cast(b, tf.float32)
-        local_inputs = tf.cast(logits_reshaped, tf.float32)
-        if self.para.loss_function == 'sampled_softmax':
-            loss = tf.nn.sampled_softmax_loss(
-                weights= tf.transpose(local_W), 
-                biases=local_b, 
-                inputs = local_inputs, 
-                labels=labels_reshaped, 
-                num_sampled = self.para.sampled_words, 
-                num_classes = self.vocabulary_size, 
-                num_true=1)
-        else:
-            loss = tf.nn.nce_loss(
-                weights= tf.transpose(local_W), 
-                biases=local_b, 
-                inputs = local_inputs, 
-                labels=labels_reshaped, 
-                num_sampled = self.para.sampled_words, 
-                num_classes = self.vocabulary_size)
-        return tf.reduce_mean(loss)
 
     def print_sentence(self, sentence, length):
         s = ''
@@ -371,10 +336,8 @@ class Skipthought_model(object):
 
     def train(self):
         batch_time = time.time()
-        self.total_loss = 0
         try:
             train_summaryIndex = -1
-            self.is_train = True
             self.corpus_length = len(self.enc_data)
             perm = np.random.permutation(self.corpus_length)
             enc_lengths_perm = self.enc_lengths[perm]
@@ -412,11 +375,12 @@ class Skipthought_model(object):
                     [self.opt_op, self.loss, self.merged, self.global_step], 
                     feed_dict=train_dict)
 
-                print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
+                # print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
+                print(current_step, loss_val, self.total_loss, self.total_loss/self.para.predict_step)
                 self.train_loss_writer.add_summary(batch_summary, current_step)
                 self.total_loss += loss_val
                 if current_step % self.para.predict_step == 0:
-                    print("\nAverage loss at epoch %d step" %self.epoch, current_step, ": ", self.total_loss/self.para.predict_step)
+                    print("\nAverage loss at epoch %d step %d:" % (self.epoch, current_step), self.total_loss/self.para.predict_step)
                     print('Learning rate: %0.6f' % self.eta.eval(session = self.sess))
                     self.total_loss = 0
                     end_time = time.time()
@@ -453,7 +417,8 @@ def preprocess(corpus_name, model_path, corpus_path, final_path, vocab_size, max
     This routine will create a vocabulary and skipthought data.
     input_path should contain .txt files with tokenised sentences, one per line.
     '''
-    parts = glob.glob(corpus_path + '*.txt')
+    # parts = glob.glob(corpus_path + '*.txt')
+    parts = glob.glob(corpus_path)
 
     if not os.path.exists(model_path):
         os.makedirs(model_path)
@@ -513,16 +478,14 @@ def make_paras(path):
         os.makedirs(path)
     paras = Skipthought_para(embedding_size = 300, 
         hidden_size = 300, 
-        hidden_layers = 1, 
+        hidden_layers = 2, 
         batch_size = 5, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.0008, 
+        learning_rate = 0.008, 
         bidirectional = False,
-        loss_function = 'softmax',
-        sampled_words = 25,
         decay_steps = 400000,
         decay = 0.5,
-        predict_step = 10,
+        predict_step = 20,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0,
@@ -540,11 +503,12 @@ def train(model_path, training_data_path):
     with open(training_data_path + '/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = model_path)
-    tf.global_variables_initializer().run(session = self.sess)
+    tf.global_variables_initializer().run(session = model.sess)
     model.initialise()
     
     data_parts = glob.glob(training_data_path + '*.pkl')
     num_epochs = 1000
+    model.total_loss = 0
     for epoch in range(num_epochs):
         print('\n~~~~~~~ Starting training ~~~~~~~\n')
         print('----- Epoch', epoch, '-----')
@@ -576,6 +540,7 @@ def continue_train(model_path, training_data_path, step):
     
     data_parts = glob.glob(training_data_path + '*.pkl')
     num_epochs = 1000
+    model.total_loss = 0
     for epoch in range(num_epochs):
         print('\n~~~~~~~ Starting training ~~~~~~~\n')
         print('----- Epoch', epoch, '-----')
@@ -605,29 +570,29 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    # paras = make_paras('../models/toronto_n5/')
-    # preprocess(
-    #     corpus_name = 'toronto', 
-    #     model_path = '../models/toronto_n5/',
-    #     corpus_path = '../corpus/toronto_split/', 
-    #     final_path = '../training_data/toronto',
-    #     vocab_size = 20000, 
-    #     max_sent_len = paras.max_sent_len)
+    paras = make_paras('../models/toronto_n5/')
+    preprocess(
+        corpus_name = 'toronto', 
+        model_path = '../models/toronto_n5/',
+        corpus_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m/', 
+        final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
+        vocab_size = 20000, 
+        max_sent_len = paras.max_sent_len)
     # train(model_path = '../models/toronto_n5/',
-    #     training_data_path = '../training_data/toronto/')
+        # training_data_path = '../training_data/toronto/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(
     #     corpus_name = 'gingerbread', 
     #     model_path = '../models/skipthought_gingerbread/',
     #     corpus_path = '../corpus/gingerbread/', 
-    #     final_path = '../training_data/gingerbread/',
+    #     final_path = '../training_data/gingerbread_shuffle/',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
     # train(model_path = '../models/skipthought_gingerbread/',
-    #     training_data_path = '../training_data/gingerbread/')
+    #     training_data_path = '../training_data/gingerbread_shuffle/')
 
-    continue_train(model_path = '../models/skipthought_gingerbread/',
-        training_data_path = '../training_data/gingerbread/', step =50)
+    # continue_train(model_path = '../models/skipthought_gingerbread/',
+    #     training_data_path = '../training_data/gingerbread/', step =50)
 
 

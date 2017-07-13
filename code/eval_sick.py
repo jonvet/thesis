@@ -37,25 +37,21 @@ def prepare_batches(lengths, sentences, b_size):
 # if __name__ == '__main__':
 
 # Parameters for SICK classifier
-_learning_rate = 0.01
+_learning_rate = 0.03
 _epochs = 10000
 _batch_size = 1000
 _train_size = 0.8
 _temp_size = 10000
 _L2 = 0
 _use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-step = 25000 # Determines which saved model to use
+step = 300000 # Determines which saved model to use
 _keep_prob = 1.0
 _hidden_size = 512
-
+_decay = 0.7
+_decay_steps = 400
 
 # path = '../models/toronto_n5/'
 path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
-
-
-data = pd.read_csv('../eval/SICK/SICK_train.txt', sep='\t', index_col=0)
-
-sent_all = data.sentence_A.tolist() + data.sentence_B.tolist()
 
 with open(path + 'paras.pkl', 'rb') as f:
     paras = pkl.load(f)
@@ -67,39 +63,26 @@ tf.reset_default_graph()
 model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
 model.load_model(path, step)
 
-print('Using skipthought model to encode SICK sentences')
-if _use_expanded_vocab:
-    print('Using expanded vocab')
-    with open(path + 'expanded_vocab.pkl', 'rb') as f:
-        vocab = pkl.load(f)
+print('Using expanded vocab')
+with open(path + 'expanded_vocab.pkl', 'rb') as f:
+    vocab = pkl.load(f)
 
-    # random embeddings
-    # num = len(vocab)
-    # embeddings = np.random.randn(num,model.para.embedding_size)
-    # print('random embeddings created')
-    embeddings = np.load(path + 'expanded_embeddings.npy')
+
+embeddings = np.load(path + 'expanded_embeddings.npy')
+
+def embed(embeddings, data):
+
+# random embeddings
+# num = len(vocab)
+# embeddings = np.random.randn(num,model.para.embedding_size)
+# print('random embeddings created')
+
+    sent_all = data.sentence_A.tolist() + data.sentence_B.tolist()
 
     sent_lengths, sentences = sick_encode(
         sentences = sent_all[:_temp_size], 
         dictionary = vocab, 
         embeddings = embeddings)
-
-    # b_lengths, b_sentences = prepare_batches(
-    #     lengths = sent_lengths, 
-    #     sentences = sentences, 
-    #     b_size=32)
-
-    # sentences_encoded = []
-    # print('\nComputing skipthought sentence representations...')
-    # for batch in range(len(b_lengths)):
-    #     print('\rBatch %d/%d' %(batch, len(b_lengths)), end='   ')
-    #     b_sentences_encoded = model.encoded_sentences.eval(
-    #         session = model.sess, 
-    #         feed_dict={
-    #             model.sentences_embedded: b_sentences[batch], 
-    #             model.sentences_lengths: b_lengths[batch]})
-    #     sentences_encoded.append(b_sentences_encoded)
-    # sentences_encoded = np.concatenate([np.array(i) for i in sentences_encoded])
 
     sentences_encoded = model.encoded_sentences.eval(
             session = model.sess, 
@@ -107,34 +90,40 @@ if _use_expanded_vocab:
                 model.sentences_embedded: sentences, 
                 model.sentences_lengths: sent_lengths})
 
-else:
-    sent_lengths, sentences = sick_encode(
-        sentences = sent_all[:_temp_size], 
-        dictionary = vocab)
-    model.enc_lengths, model.enc_data = sent_lengths, sentences
-    sentences_encoded = model.encode(sentences, sent_lengths)
+    n = np.shape(sentences_encoded)[0]//2
+    perm = np.random.permutation(n)
 
-print(np.shape(sentences_encoded))    
-n = np.shape(sentences_encoded)[0]//2
+    sent_a = sentences_encoded[:n, :]
+    sent_b = sentences_encoded[n:, :]
+    feature_1 = sent_a * sent_b 
+    feature_2 = np.abs(sent_a - sent_b)
+    features = np.concatenate(
+        (sent_a, sent_b, feature_1, feature_2), axis=1)
 
-print('\nCreating SICK features')
-sent_a = sentences_encoded[:n, :]
-sent_b = sentences_encoded[n:, :]
-feature_1 = sent_a * sent_b 
-feature_2 = np.abs(sent_a - sent_b)
-features = np.concatenate(
-    (sent_a, sent_b, feature_1, feature_2), axis=1)
+    return features
 
+data = pd.read_csv('../eval/SICK/SICK_train.txt', sep='\t', index_col=0)
+train_data = embed(embeddings, data)
 score = data.relatedness_score.tolist()
-score_encoded = encode_labels(score[:_temp_size])
+train_labels = encode_labels(score[:_temp_size])
 
-perm = np.random.permutation(n)
-n_train = int(np.floor(_train_size*n))
-train_features = features[perm][:n_train]
-train_score_encoded = score_encoded[perm][:n_train]
-dev_features = features[perm][n_train:]
-dev_score_encoded = score_encoded[perm][n_train:]
-dev_score = np.array(score)[perm][n_train:]
+data = pd.read_csv('../eval/SICK/SICK_trial.txt', sep='\t', index_col=0)
+trial_data = embed(embeddings, data)
+score = data.relatedness_score.tolist()
+trial_labels = encode_labels(score[:_temp_size])
+
+train_data = np.concatenate((train_data, trial_data), axis=0)
+train_labels = np.concatenate((train_labels, trial_labels), axis=0)
+
+data = pd.read_csv('../eval/SICK/SICK_test_annotated.txt', sep='\t', index_col=0)
+test_data = embed(embeddings, data)
+test_labels = data.relatedness_score.tolist()
+test_labels_encoded = encode_labels(test_labels)
+
+n_train = len(train_data)
+n_test = len(test_data)
+
+print('\nFound %d training examples and %d test examples\n' %(n_train, n_test))
 
 tf.reset_default_graph()
 graph = tf.Graph()
@@ -150,7 +139,6 @@ with graph.as_default():
         tf.float32, 
         [None, None], 
         'features')
-
 
     b = tf.get_variable('sick_bias', 
         [5], 
@@ -178,9 +166,15 @@ with graph.as_default():
         tf.nn.softmax_cross_entropy_with_logits(
             labels = sick_scores, 
             logits=logits)) + l2_reg
+    eta = tf.train.exponential_decay(
+        _learning_rate, 
+        global_step, 
+        _decay_steps, 
+        _decay, 
+        staircase=True)
     opt_op = tf.contrib.layers.optimize_loss(
         loss = loss, 
-        learning_rate = _learning_rate, 
+        learning_rate = eta, 
         optimizer = 'SGD', 
         global_step = global_step) 
     prediction = tf.matmul(tf.nn.softmax(logits), r)
@@ -189,8 +183,8 @@ with graph.as_default():
         tf.global_variables_initializer().run(session = sess)
         for epoch in range(_epochs):
             perm = np.random.permutation(n_train)
-            features_perm = features[perm]
-            score_encoded_perm = train_score_encoded[perm]
+            train_data_perm = train_data[perm]
+            train_labels_perm = train_labels[perm]
             avg_loss = 0
             steps = n_train//_batch_size
             # for step in range(steps):
@@ -207,8 +201,8 @@ with graph.as_default():
             #     print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
                 # print(batch_loss)
 
-            train_dict = {sick_scores: score_encoded_perm,
-                              sick_features: features_perm}
+            train_dict = {sick_scores: train_labels_perm,
+                              sick_features: train_data_perm}
             _, batch_loss, batch_prediction = sess.run(
                     [opt_op, loss, prediction], 
                     feed_dict=train_dict)
@@ -216,16 +210,16 @@ with graph.as_default():
             # print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
 
             if epoch % 1==0:
-                dev_dict = {sick_scores: dev_score_encoded,
-                        sick_features: dev_features}
-                _, dev_loss, dev_prediction = sess.run(
-                    [opt_op, loss, prediction], 
-                    feed_dict=dev_dict)
-                pr = pearsonr(dev_prediction[:,0], dev_score)[0]
-                sr = spearmanr(dev_prediction[:,0], dev_score)[0]
-                se = mse(dev_prediction[:,0], dev_score)
-                print('\nEpoch %d: Train loss: %0.2f, Dev loss: %0.2f, Dev pearson: %0.2f, Dev spearman: %0.2f, Dev MSE: %0.2f\n' 
-                    % (epoch, avg_loss, dev_loss, pr, sr, se))
+                test_dict = {sick_scores: test_labels_encoded,
+                        sick_features: test_data}
+                test_loss, test_prediction, lr = sess.run(
+                    [loss, prediction, eta], 
+                    feed_dict=test_dict)
+                pr = pearsonr(test_prediction[:,0], test_labels)[0]
+                sr = spearmanr(test_prediction[:,0], test_labels)[0]
+                se = mse(test_prediction[:,0], test_labels)
+                print('\nEpoch %d: Train loss: %0.2f, Dev loss: %0.2f, Dev pearson: %0.2f, Dev spearman: %0.2f, Dev MSE: %0.2f, lr: %0.4f\n' 
+                    % (epoch, avg_loss, test_loss, pr, sr, se, lr))
 
 
                 # i = np.random.randint(len(model.sentences_embedded))
