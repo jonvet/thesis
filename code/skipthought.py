@@ -322,13 +322,7 @@ class Skipthought_model(object):
         # Print summary statistics
         
         # self.a= tf.contrib.graph_editor.get_tensors(self.graph)
-        self.train_loss_writer = tf.summary.FileWriter('./tensorboard/train_loss', self.sess.graph)
-        embedding_writer = tf.summary.FileWriter('./tensorboard/', self.sess.graph)
-        config = projector.ProjectorConfig()
-        embedding = config.embeddings.add()
-        embedding.tensor_name = self.word_embeddings.name
-        embedding.metadata_path = os.path.join('./meta_data.tsv')
-        projector.visualize_embeddings(embedding_writer, config)
+        self.train_loss_writer = tf.summary.FileWriter(self.path + 'tensorboard/', self.sess.graph)
         self.merged = tf.summary.merge_all()
         self.saver = tf.train.Saver()
         self.total_loss = 0
@@ -476,20 +470,20 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Skipthought_para(embedding_size = 300, 
-        hidden_size = 300, 
-        hidden_layers = 2, 
-        batch_size = 5, 
+    paras = Skipthought_para(embedding_size = 620, 
+        hidden_size = 2400, 
+        hidden_layers = 1, 
+        batch_size = 128, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.008, 
         bidirectional = False,
         decay_steps = 400000,
         decay = 0.5,
-        predict_step = 20,
+        predict_step = 1000,
         max_sent_len = 30,
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0,
-        save_every=50)
+        save_every=25000)
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
     return paras
@@ -500,8 +494,7 @@ def train(model_path, training_data_path):
         paras = pkl.load(f)
     with open(model_path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open(training_data_path + '/data_0.pkl', 'rb') as f:
-        data = pkl.load(f)
+
     model = Skipthought_model(vocab = vocab, parameters = paras, path = model_path)
     tf.global_variables_initializer().run(session = model.sess)
     model.initialise()
@@ -570,16 +563,16 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    paras = make_paras('../models/toronto_n5/')
-    preprocess(
-        corpus_name = 'toronto', 
-        model_path = '../models/toronto_n5/',
-        corpus_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m/', 
-        final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
-        vocab_size = 20000, 
-        max_sent_len = paras.max_sent_len)
-    # train(model_path = '../models/toronto_n5/',
-        # training_data_path = '../training_data/toronto/')
+    paras = make_paras('../models/toronto_n6/')
+    # preprocess(
+    #     corpus_name = 'toronto', 
+    #     model_path = '../models/toronto_n5/',
+    #     corpus_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m/', 
+    #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
+    #     vocab_size = 20000, 
+    #     max_sent_len = paras.max_sent_len)
+    train(model_path = '../models/toronto_n6/',
+        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(

@@ -37,18 +37,18 @@ def prepare_batches(lengths, sentences, b_size):
 # if __name__ == '__main__':
 
 # Parameters for SICK classifier
-_learning_rate = 0.03
+_learning_rate = 0.01
 _epochs = 10000
-_batch_size = 1000
+_batch_size = 64
 _train_size = 0.8
 _temp_size = 10000
 _L2 = 0
 _use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-step = 300000 # Determines which saved model to use
+step = 450000 # Determines which saved model to use
 _keep_prob = 1.0
 _hidden_size = 512
-_decay = 0.7
-_decay_steps = 400
+_decay = 0.9
+_decay_steps = 3000
 
 # path = '../models/toronto_n5/'
 path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
@@ -98,7 +98,7 @@ def embed(embeddings, data):
     feature_1 = sent_a * sent_b 
     feature_2 = np.abs(sent_a - sent_b)
     features = np.concatenate(
-        (sent_a, sent_b, feature_1, feature_2), axis=1)
+        (feature_1, feature_2), axis=1)
 
     return features
 
@@ -146,7 +146,7 @@ with graph.as_default():
         initializer = initializer)
 
     W = tf.get_variable('sick_weight', 
-        [9600, 5], 
+        [4800, 5], 
         tf.float32, 
         initializer = initializer)
 
@@ -157,9 +157,8 @@ with graph.as_default():
         name = 'global_step', 
         trainable = False)
 
-    logits = tf.nn.dropout(tf.matmul(sick_features, W), keep_prob = _keep_prob) + b
+    logits = tf.matmul(sick_features, W) + b
 
-    # logits = tf.contrib.layers.linear(logits, 5)
     all_vars = tf.trainable_variables() 
     l2_reg = tf.add_n([ tf.nn.l2_loss(v) for v in all_vars if 'bias' not in v.name ]) * _L2
     loss = tf.reduce_mean(
@@ -187,26 +186,28 @@ with graph.as_default():
             train_labels_perm = train_labels[perm]
             avg_loss = 0
             steps = n_train//_batch_size
-            # for step in range(steps):
-            #     begin = step * _batch_size
-            #     end = (step + 1) * _batch_size
-            #     batch_features = features_perm[begin : end]
-            #     batch_score_encoded = score_encoded_perm[begin : end]
-            #     train_dict = {sick_scores: batch_score_encoded,
-            #                   sick_features: batch_features}
-            #     _, batch_loss, batch_prediction = sess.run(
-            #         [opt_op, loss, prediction], 
-            #         feed_dict=train_dict)
-            #     avg_loss += batch_loss/steps
-            #     print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
-                # print(batch_loss)
-
-            train_dict = {sick_scores: train_labels_perm,
-                              sick_features: train_data_perm}
-            _, batch_loss, batch_prediction = sess.run(
+            for step in range(steps):
+                begin = step * _batch_size
+                end = (step + 1) * _batch_size
+                batch_features = train_data_perm[begin : end]
+                batch_score_encoded = train_labels_perm[begin : end]
+                train_dict = {sick_scores: batch_score_encoded,
+                              sick_features: batch_features}
+                _, batch_loss, batch_prediction = sess.run(
                     [opt_op, loss, prediction], 
                     feed_dict=train_dict)
-            avg_loss += batch_loss
+                avg_loss += batch_loss/steps
+                print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
+                # print(batch_loss)
+
+            # train_dict = {sick_scores: train_labels_perm,
+            #                   sick_features: train_data_perm}
+            # _, batch_loss, batch_prediction = sess.run(
+            #         [opt_op, loss, prediction], 
+            #         feed_dict=train_dict)
+
+
+            # avg_loss += batch_loss
             # print('\rBatch loss: %0.2f' % batch_loss, end = '    ')
 
             if epoch % 1==0:
