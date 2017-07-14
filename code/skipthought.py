@@ -21,7 +21,7 @@ from gru_cell import b_NoNormGRUCell2
 class Skipthought_para(object):
 
     def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, 
-            bidirectional, loss_function, sampled_words, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm, save_every):
+            bidirectional, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm, save_every):
         self.embedding_size = embedding_size
         self.hidden_size = hidden_size
         self.hidden_layers = hidden_layers
