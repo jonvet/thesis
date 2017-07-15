@@ -369,7 +369,7 @@ class Skipthought_model(object):
                     [self.opt_op, self.loss, self.merged, self.global_step], 
                     feed_dict=train_dict)
 
-                # print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
+                print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
 
                 self.train_loss_writer.add_summary(batch_summary, current_step)
                 self.total_loss += loss_val
