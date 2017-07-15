@@ -370,7 +370,7 @@ class Skipthought_model(object):
                     feed_dict=train_dict)
 
                 # print('\rStep %d loss: %0.5f' % (current_step, loss_val), end='   ')
-                print(current_step, loss_val, self.total_loss, self.total_loss/self.para.predict_step)
+
                 self.train_loss_writer.add_summary(batch_summary, current_step)
                 self.total_loss += loss_val
                 if current_step % self.para.predict_step == 0:
