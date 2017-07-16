@@ -156,7 +156,7 @@ class Skipthought_model(object):
                 # cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
                 cell = gru_cell.LayerNormGRUCell(
                     self.para.hidden_size,
-                    w_initializer=self.uniform_initializer,
+                    w_initializer=self.initializer,
                     u_initializer=random_orthonormal_initializer,
                     b_initializer=tf.constant_initializer(0.0))
                 # cell = NoNormGRUCell(
@@ -188,7 +188,7 @@ class Skipthought_model(object):
 
         cell = gru_cell.LayerNormGRUCell(
             self.para.hidden_size,
-            w_initializer=self.uniform_initializer,
+            w_initializer=self.initializer,
             u_initializer=random_orthonormal_initializer,
             b_initializer=tf.constant_initializer(0.0))
 
@@ -242,14 +242,15 @@ class Skipthought_model(object):
         saver.restore(self.sess, path + '/saved_models/step_%d' % step)
         print('Model restored')
 
-    def evaluate(self, mode = 'max', index = None):
-        i = index if index != None else np.random.randint(len(self.enc_data))
+    def evaluate(self, data, mode = 'max', index = None):
+        enc_lengths, enc_data, post_data, post_lab, pre_data, pre_lab, post_masks, pre_masks = data[2:]
+        i = index if index != None else np.random.randint(len(enc_data))
         print('\nOriginal sequence:')
-        print(self.print_sentence(self.pre_data[i, 1:], np.sum(self.pre_masks, axis=1)[i]-1))
-        print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
-        print(self.print_sentence(self.post_data[i, 1:], np.sum(self.post_masks, axis=1)[i]-1))
-        test_enc_lengths = np.expand_dims(self.enc_lengths[i], 0)
-        test_enc_inputs = np.expand_dims(self.enc_data[i], 0)
+        print(self.print_sentence(pre_data[i, 1:], np.sum(pre_masks, axis=1)[i]-1))
+        print(self.print_sentence(enc_data[i], enc_lengths[i]))
+        print(self.print_sentence(post_data[i, 1:], np.sum(post_masks, axis=1)[i]-1))
+        test_enc_lengths = np.expand_dims(enc_lengths[i], 0)
+        test_enc_inputs = np.expand_dims(enc_data[i], 0)
         test_encoder_state = self.sess.run(
             self.encoded_sentences, 
             feed_dict={self.sentences: test_enc_inputs, self.sentences_lengths: test_enc_lengths})
@@ -280,7 +281,7 @@ class Skipthought_model(object):
 
         print('\nPredicted previous and following sentences around original (middle) sentence:')
         print(self.print_sentence(sentence, len(sentence)))
-        print(self.print_sentence(self.enc_data[i], self.enc_lengths[i]))
+        print(self.print_sentence(enc_data[i], enc_lengths[i]))
 
         decoder_state = test_encoder_state
         decoder_input = np.array([0])
@@ -328,20 +329,20 @@ class Skipthought_model(object):
         self.total_loss = 0
         self.start_time = time.time()
 
-    def train(self):
+    def train(self, data):
         batch_time = time.time()
+        enc_lengths, enc_data, post_data, post_lab, pre_data, pre_lab, post_masks, pre_masks = data[2:]
         try:
-            train_summaryIndex = -1
-            self.corpus_length = len(self.enc_data)
+            self.corpus_length = len(enc_data)
             perm = np.random.permutation(self.corpus_length)
-            enc_lengths_perm = self.enc_lengths[perm]
-            enc_data_perm = self.enc_data[perm]
-            post_masks_perm = np.array(self.post_masks)[perm]
-            post_inputs_perm = np.array(self.post_data)[perm]
-            post_labels_perm = np.array(self.post_lab)[perm]
-            pre_masks_perm = np.array(self.pre_masks)[perm]
-            pre_inputs_perm = np.array(self.pre_data)[perm]
-            pre_labels_perm = np.array(self.pre_lab)[perm]
+            enc_lengths_perm = enc_lengths[perm]
+            enc_data_perm = enc_data[perm]
+            post_masks_perm = np.array(post_masks)[perm]
+            post_inputs_perm = np.array(post_data)[perm]
+            post_labels_perm = np.array(post_lab)[perm]
+            pre_masks_perm = np.array(pre_masks)[perm]
+            pre_inputs_perm = np.array(pre_data)[perm]
+            pre_labels_perm = np.array(pre_lab)[perm]
             
             n_steps = self.corpus_length // self.para.batch_size
             for step in range(n_steps):
@@ -384,10 +385,8 @@ class Skipthought_model(object):
                     hours = secs//3600
                     minutes = secs / 60 - hours * 60
                     print('Time elapsed: %d:%02d hours' % (hours, minutes))
-                    print('\n~~~~~~~~~~ Decoding using argmax~~~~~~~~~~')
-                    self.evaluate(mode='max')
                     print('\n~~~~~~~~~~ Decoding by sampling ~~~~~~~~~~')
-                    self.evaluate(mode='sample')
+                    self.evaluate(data, mode='sample')
                     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n')
                 if current_step % self.para.save_every == 0:
                     self.save_model(self.path + '/saved_models/', current_step)
@@ -510,8 +509,7 @@ def train(model_path, training_data_path):
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
-            model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
-            model.train()
+            model.train(data)
         # model.save_model(model.path + '/saved_models/', model.global_step.eval(session = model.sess))
         model.epoch += 1
 
@@ -542,8 +540,7 @@ def continue_train(model_path, training_data_path, step):
         for part in data_parts:
             with open(part, 'rb') as f:
                 data = pkl.load(f)
-            model.enc_lengths, model.enc_data, model.post_data, model.post_lab, model.pre_data, model.pre_lab, model.post_masks, model.pre_masks = data[2:]
-            model.train()
+            model.train(data)
         # model.save_model(model.path + '/saved_models/', model.global_step.eval(session = model.sess))
         model.epoch += 1
 
@@ -563,7 +560,7 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    paras = make_paras('../models/toronto_n6/')
+    paras = make_paras('../models/toronto_n7/')
     # preprocess(
     #     corpus_name = 'toronto', 
     #     model_path = '../models/toronto_n5/',
@@ -571,8 +568,8 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = '../models/toronto_n6/',
-        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle/')
+    train(model_path = '../models/toronto_n7/',
+        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(

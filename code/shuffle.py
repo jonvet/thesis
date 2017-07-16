@@ -2,14 +2,14 @@ import numpy as np
 import pickle as pkl
 import glob
 
-input_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle2/'
-output_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle/'
+input_path = '/cluster/project6/mr_corpora/vetterle/toronto_new/'
+output_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/'
 
 files  = glob.glob(input_path + '*.pkl')
 n_files = len(files)
 perm = np.random.permutation(n_files)
 files = np.array(files)[perm]
-b_size = 10
+b_size = 9
 
 print('To do: %d batches' % (n_files // b_size + 1))
 for batch in range(n_files // b_size + 1):
@@ -50,9 +50,10 @@ for batch in range(n_files // b_size + 1):
     post_masks = post_masks[perm]
     pre_masks = pre_masks[perm]
 
-    lines_per_file = 1000000
+    lines_per_file = 100000
+    n_output_files = n // lines_per_file + 1
     print('Saving...')
-    for x in range(len(batch_files)):
+    for x in range(n_output_files):
         n = len(glob.glob(output_path + '*.pkl'))
         with open(output_path + 'data_%d.pkl' % n, 'wb') as f:
             t_enc_lengths = enc_lengths[x*lines_per_file : (x+1)*lines_per_file]

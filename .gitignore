@@ -5,3 +5,5 @@ tensorboard/
 corpus/
 training_data/
 results.xlsx
+~$results.xlsx
+
