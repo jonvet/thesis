@@ -85,8 +85,10 @@ def embed(embeddings, data):
                 model.sentences_lengths: sent_lengths})
 
     n = np.shape(sentences_encoded)[0]//2
-    perm = np.random.permutation(n)
+    # perm = np.random.permutation(n)
 
+    sent_a = sentences_encoded[:n]
+    sent_b = sentences_encoded[n:]
     feature_1 = sent_a * sent_b 
     feature_2 = np.abs(sent_a - sent_b)
     features = np.concatenate(
@@ -103,9 +105,6 @@ data = pd.read_csv('../eval/SICK/SICK_trial.txt', sep='\t', index_col=0)
 dev_data = embed(embeddings, data)
 score = data.relatedness_score.tolist()
 dev_labels = encode_labels(score)
-
-# train_data = np.concatenate((train_data, trial_data), axis=0)
-# train_labels = np.concatenate((train_labels, trial_labels), axis=0)
 
 data = pd.read_csv('../eval/SICK/SICK_test_annotated.txt', sep='\t', index_col=0)
 test_data = embed(embeddings, data)
