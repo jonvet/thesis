@@ -519,8 +519,7 @@ def continue_train(model_path, training_data_path, step):
         paras = pkl.load(f)
     with open(model_path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open(training_data_path + '/data_0.pkl', 'rb') as f:
-        data = pkl.load(f)
+
     model = Skipthought_model(vocab = vocab, parameters = paras, path = model_path)
     model.load_model(model_path, step)
     model.initialise()
@@ -568,8 +567,8 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = '../models/toronto_n7/',
-        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/')
+    # train(model_path = '../models/toronto_n7/',
+    #     training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(
@@ -582,7 +581,7 @@ if __name__ == '__main__':
     # train(model_path = '../models/skipthought_gingerbread/',
     #     training_data_path = '../training_data/gingerbread_shuffle/')
 
-    # continue_train(model_path = '../models/skipthought_gingerbread/',
-    #     training_data_path = '../training_data/gingerbread/', step =50)
+    continue_train(model_path = '../models/toronto_n7/',
+        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/', step =150000)
 
 

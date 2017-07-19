@@ -40,18 +40,12 @@ def prepare_batches(lengths, sentences, b_size):
 _learning_rate = 0.01
 _epochs = 10000
 _batch_size = 64
-_train_size = 0.8
-_temp_size = 10000
-_L2 = 0
-_use_expanded_vocab = True # Determines whether to use expanded vocabulary, or the vocabulary that was used for training
-step = 450000 # Determines which saved model to use
-_keep_prob = 1.0
-_hidden_size = 512
-_decay = 0.9
+step = 150000 # Determines which saved model to use
+_decay = 1.0
 _decay_steps = 3000
 
 # path = '../models/toronto_n5/'
-path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
+path = '/cluster/project2/mr/vetterle/skipthought/toronto_n7/'
 
 with open(path + 'paras.pkl', 'rb') as f:
     paras = pkl.load(f)
@@ -80,7 +74,7 @@ def embed(embeddings, data):
     sent_all = data.sentence_A.tolist() + data.sentence_B.tolist()
 
     sent_lengths, sentences = sick_encode(
-        sentences = sent_all[:_temp_size], 
+        sentences = sent_all, 
         dictionary = vocab, 
         embeddings = embeddings)
 
@@ -93,8 +87,6 @@ def embed(embeddings, data):
     n = np.shape(sentences_encoded)[0]//2
     perm = np.random.permutation(n)
 
-    sent_a = sentences_encoded[:n, :]
-    sent_b = sentences_encoded[n:, :]
     feature_1 = sent_a * sent_b 
     feature_2 = np.abs(sent_a - sent_b)
     features = np.concatenate(
@@ -105,15 +97,15 @@ def embed(embeddings, data):
 data = pd.read_csv('../eval/SICK/SICK_train.txt', sep='\t', index_col=0)
 train_data = embed(embeddings, data)
 score = data.relatedness_score.tolist()
-train_labels = encode_labels(score[:_temp_size])
+train_labels = encode_labels(score)
 
 data = pd.read_csv('../eval/SICK/SICK_trial.txt', sep='\t', index_col=0)
-trial_data = embed(embeddings, data)
+dev_data = embed(embeddings, data)
 score = data.relatedness_score.tolist()
-trial_labels = encode_labels(score[:_temp_size])
+dev_labels = encode_labels(score)
 
-train_data = np.concatenate((train_data, trial_data), axis=0)
-train_labels = np.concatenate((train_labels, trial_labels), axis=0)
+# train_data = np.concatenate((train_data, trial_data), axis=0)
+# train_labels = np.concatenate((train_labels, trial_labels), axis=0)
 
 data = pd.read_csv('../eval/SICK/SICK_test_annotated.txt', sep='\t', index_col=0)
 test_data = embed(embeddings, data)
@@ -137,18 +129,8 @@ with graph.as_default():
         'sick_scores')
     sick_features = tf.placeholder(
         tf.float32, 
-        [None, None], 
+        [None, 2 * 2400], 
         'features')
-
-    b = tf.get_variable('sick_bias', 
-        [5], 
-        tf.float32, 
-        initializer = initializer)
-
-    W = tf.get_variable('sick_weight', 
-        [4800, 5], 
-        tf.float32, 
-        initializer = initializer)
 
     r = tf.reshape(tf.range(1, 6, 1, 
         dtype = tf.float32), 
@@ -157,14 +139,13 @@ with graph.as_default():
         name = 'global_step', 
         trainable = False)
 
-    logits = tf.matmul(sick_features, W) + b
+    logits = tf.contrib.layers.fully_connected(
+        sick_features, 5, activation_fn=None)
 
-    all_vars = tf.trainable_variables() 
-    l2_reg = tf.add_n([ tf.nn.l2_loss(v) for v in all_vars if 'bias' not in v.name ]) * _L2
     loss = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits(
             labels = sick_scores, 
-            logits=logits)) + l2_reg
+            logits=logits))
     eta = tf.train.exponential_decay(
         _learning_rate, 
         global_step, 
