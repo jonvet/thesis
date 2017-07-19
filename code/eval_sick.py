@@ -37,7 +37,7 @@ def prepare_batches(lengths, sentences, b_size):
 # if __name__ == '__main__':
 
 # Parameters for SICK classifier
-_learning_rate = 0.01
+_learning_rate = 0.001
 _epochs = 10000
 _batch_size = 64
 step = 150000 # Determines which saved model to use
@@ -154,7 +154,7 @@ with graph.as_default():
     opt_op = tf.contrib.layers.optimize_loss(
         loss = loss, 
         learning_rate = eta, 
-        optimizer = 'SGD', 
+        optimizer = 'Adam', 
         global_step = global_step) 
     prediction = tf.matmul(tf.nn.softmax(logits), r)
 
