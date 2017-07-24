@@ -3,7 +3,8 @@ import pickle as pkl
 import glob
 
 input_path = '/cluster/project6/mr_corpora/vetterle/toronto_new/'
-output_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/'
+# output_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle4/'
+output_path = '../training_data/'
 
 files  = glob.glob(input_path + '*.pkl')
 n_files = len(files)
@@ -20,6 +21,7 @@ for batch in range(n_files // b_size + 1):
 
     with open(batch_files[0], 'rb') as f:
         file = pkl.load(f)
+        print(file)
         enc_lengths, enc_data, post_data, post_lab, pre_data, pre_lab, post_masks, pre_masks = file[2:]
         corpus_name = file[0]
         max_len = file[1]
@@ -50,8 +52,9 @@ for batch in range(n_files // b_size + 1):
     post_masks = post_masks[perm]
     pre_masks = pre_masks[perm]
 
-    lines_per_file = 100000
+    lines_per_file = 1000000
     n_output_files = n // lines_per_file + 1
+    print('Number of output files:', n_output_files)
     print('Saving...')
     for x in range(n_output_files):
         n = len(glob.glob(output_path + '*.pkl'))

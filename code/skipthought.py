@@ -567,8 +567,8 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    # train(model_path = '../models/toronto_n7/',
-    #     training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/')
+    train(model_path = '../models/toronto_n7/',
+          training_data_path = '../training_data/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(
@@ -581,7 +581,7 @@ if __name__ == '__main__':
     # train(model_path = '../models/skipthought_gingerbread/',
     #     training_data_path = '../training_data/gingerbread_shuffle/')
 
-    continue_train(model_path = '../models/toronto_n7/',
-        training_data_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m_shuffle3/', step =150000)
+#    continue_train(model_path = '../models/toronto_n7/',
+#       training_data_path = '../toronto_1m_shuffle3/', step =150000)
 
 
