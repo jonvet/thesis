@@ -205,7 +205,7 @@ class NoNormGRUCell(tf.contrib.rnn.RNNCell):
     return new_h, new_h
 
 
-class b_NoNormGRUCell(tf.contrib.rnn.RNNCell):
+class b_LayerNormGRUCell(tf.contrib.rnn.RNNCell):
 
   def __init__(self,
                num_units,

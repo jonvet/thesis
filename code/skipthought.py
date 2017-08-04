@@ -15,7 +15,7 @@ import pickle as pkl
 from collections import defaultdict
 import gru_cell
 from gru_cell import NoNormGRUCell
-from gru_cell import b_NoNormGRUCell
+from gru_cell import b_LayerNormGRUCell
 from gru_cell import b_NoNormGRUCell2
 
 class Skipthought_para(object):
@@ -151,46 +151,38 @@ class Skipthought_model(object):
                     scope = varscope)
                 states_fw, states_bw = sentences_states
                 sentences_states_h = tf.concat([states_fw[-1],states_bw[-1]], axis = 1)
-                # sentences_states_h = tf.contrib.layers.linear(sentences_states_h, self.para.hidden_size)
+
             else:
-                # cell = tf.contrib.rnn.GRUCell(self.para.hidden_size)
+
                 cell = gru_cell.LayerNormGRUCell(
                     self.para.hidden_size,
                     w_initializer=self.initializer,
                     u_initializer=random_orthonormal_initializer,
                     b_initializer=tf.constant_initializer(0.0))
-                # cell = NoNormGRUCell(
-                #     self.para.hidden_size,
-                #     w_initializer=self.uniform_initializer,
-                #     u_initializer=random_orthonormal_initializer,
-                #     b_initializer=tf.constant_initializer(0.0))
-                # cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
-                # cell = tf.contrib.rnn.MultiRNNCell([cell]*self.para.hidden_layers, state_is_tuple=True)
+
                 print('Using one-directional RNN')
                 _, sentences_states = tf.nn.dynamic_rnn(
                     cell = cell, 
                     inputs = self.sentences_embedded, 
                     sequence_length=sentences_lengths, 
                     dtype=tf.float32, scope = varscope)   
-                # sentences_states_h = sentences_states[-1]
-        return sentences_states
 
-    # def output_fn(outputs):
-    #     return tf.contrib.layers.linear(outputs, self.vocab_size, scope=scope)
+        return sentences_states
 
     def decoder(self, name, decoder_input, targets, mask, initial_state, reuse_logits):
 
-        # cell = NoNormGRUCell(
+        # cell = gru_cell.LayerNormGRUCell(
         #     self.para.hidden_size,
-        #     w_initializer=self.uniform_initializer,
+        #     w_initializer=self.initializer,
         #     u_initializer=random_orthonormal_initializer,
         #     b_initializer=tf.constant_initializer(0.0))
 
-        cell = gru_cell.LayerNormGRUCell(
+        cell = gru_cell.b_LayerNormGRUCell(
             self.para.hidden_size,
             w_initializer=self.initializer,
             u_initializer=random_orthonormal_initializer,
-            b_initializer=tf.constant_initializer(0.0))
+            b_initializer=tf.constant_initializer(0.0),
+            encoded_sentences=initial_state)
 
         with tf.variable_scope(name) as scope:
       
@@ -219,7 +211,6 @@ class Skipthought_model(object):
             logits=logits)
         loss = tf.reduce_mean(loss * weights)
 
-        # predict = tf.arg_max(logits, 1)
         probabilities = tf.nn.softmax(logits)
 
         return probabilities, loss, decoder_output
@@ -474,7 +465,7 @@ def make_paras(path):
         hidden_layers = 1, 
         batch_size = 128, 
         keep_prob_dropout = 1.0, 
-        learning_rate = 0.008, 
+        learning_rate = 0.0008, 
         bidirectional = False,
         decay_steps = 400000,
         decay = 0.5,
@@ -559,7 +550,7 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    paras = make_paras('../models/toronto_n7/')
+    paras = make_paras('../models/toronto_n9/')
     # preprocess(
     #     corpus_name = 'toronto', 
     #     model_path = '../models/toronto_n5/',
@@ -567,7 +558,7 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = '../models/toronto_n7/',
+    train(model_path = '../models/toronto_n9/',
           training_data_path = '../training_data/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
