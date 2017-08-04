@@ -469,7 +469,7 @@ def make_paras(path):
     paras = Skipthought_para(embedding_size = 620, 
         hidden_size = 2400, 
         hidden_layers = 1, 
-        batch_size = 5, 
+        batch_size = 128, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0008, 
         bidirectional = False,
