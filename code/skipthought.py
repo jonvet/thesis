@@ -16,7 +16,7 @@ from collections import defaultdict
 import gru_cell
 from gru_cell import NoNormGRUCell
 from gru_cell import b_LayerNormGRUCell
-from gru_cell import b_NoNormGRUCell2
+from gru_cell import b_LayerNormGRUCell2
 
 class Skipthought_para(object):
 
@@ -177,12 +177,18 @@ class Skipthought_model(object):
         #     u_initializer=random_orthonormal_initializer,
         #     b_initializer=tf.constant_initializer(0.0))
 
-        cell = gru_cell.b_LayerNormGRUCell(
+        # cell = gru_cell.b_LayerNormGRUCell(
+        #     self.para.hidden_size,
+        #     w_initializer=self.initializer,
+        #     u_initializer=random_orthonormal_initializer,
+        #     b_initializer=tf.constant_initializer(0.0),
+        #     encoded_sentences=initial_state)
+
+        cell = gru_cell.b_LayerNormGRUCell2(
             self.para.hidden_size,
             w_initializer=self.initializer,
             u_initializer=random_orthonormal_initializer,
-            b_initializer=tf.constant_initializer(0.0),
-            encoded_sentences=initial_state)
+            b_initializer=tf.constant_initializer(0.0))
 
         with tf.variable_scope(name) as scope:
       
@@ -463,7 +469,7 @@ def make_paras(path):
     paras = Skipthought_para(embedding_size = 620, 
         hidden_size = 2400, 
         hidden_layers = 1, 
-        batch_size = 128, 
+        batch_size = 5, 
         keep_prob_dropout = 1.0, 
         learning_rate = 0.0008, 
         bidirectional = False,
