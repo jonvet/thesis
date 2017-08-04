@@ -188,7 +188,7 @@ class Skipthought_model(object):
             self.para.hidden_size,
             w_initializer=self.initializer,
             u_initializer=random_orthonormal_initializer,
-            b_initializer=tf.constant_initializer(0.0))
+            b_initializer=self.initializer)
 
         with tf.variable_scope(name) as scope:
       
