@@ -14,9 +14,6 @@ import csv
 import pickle as pkl
 from collections import defaultdict
 import gru_cell
-from gru_cell import NoNormGRUCell
-from gru_cell import b_LayerNormGRUCell
-from gru_cell import b_LayerNormGRUCell2
 
 class Skipthought_para(object):
 
@@ -94,6 +91,9 @@ class Skipthought_model(object):
             [None, None], 
             "pre_sentences_masks")
 
+        self.keep_prob_dropout = tf.placeholder(tf.float32, name='dropout')
+
+
         self.sentences_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.sentences)
         self.post_inputs_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.post_inputs)
         self.pre_inputs_embedded = tf.nn.embedding_lookup(self.word_embeddings, self.pre_inputs)
@@ -160,6 +160,7 @@ class Skipthought_model(object):
                     u_initializer=random_orthonormal_initializer,
                     b_initializer=tf.constant_initializer(0.0))
 
+                cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.keep_prob_dropout)
                 print('Using one-directional RNN')
                 _, sentences_states = tf.nn.dynamic_rnn(
                     cell = cell, 
@@ -250,7 +251,7 @@ class Skipthought_model(object):
         test_enc_inputs = np.expand_dims(enc_data[i], 0)
         test_encoder_state = self.sess.run(
             self.encoded_sentences, 
-            feed_dict={self.sentences: test_enc_inputs, self.sentences_lengths: test_enc_lengths})
+            feed_dict={self.sentences: test_enc_inputs, self.sentences_lengths: test_enc_lengths, self.keep_prob_dropout: 1.0})
 
         decoder_state = test_encoder_state
         decoder_input = np.array([0])
@@ -261,7 +262,8 @@ class Skipthought_model(object):
             test_dict = {
                 self.pre_sentences_masks: np.array([[l]]),
                 self.encoded_sentences: decoder_state,
-                self.pre_inputs: np.array([decoder_input])}
+                self.pre_inputs: np.array([decoder_input]),
+                self.keep_prob_dropout: 1.0}
             decoder_input, decoder_state = self.sess.run(
                 [self.pre_prob,  self.pre_output[0]], 
                 feed_dict=test_dict)
@@ -289,7 +291,8 @@ class Skipthought_model(object):
             test_dict = {
                 self.post_sentences_masks: np.array([[l]]),
                 self.encoded_sentences: decoder_state,
-                self.post_inputs: np.array([decoder_input])}
+                self.post_inputs: np.array([decoder_input]),
+                self.keep_prob_dropout: 1.0}
             decoder_input, decoder_state = self.sess.run(
                 [self.post_prob,  self.post_output[0]], 
                 feed_dict=test_dict)
@@ -305,7 +308,8 @@ class Skipthought_model(object):
 
     def encode(self, sentences, lengths):
         encode_dict = {self.sentences: sentences,
-                       self.sentences_lengths: lengths}
+                       self.sentences_lengths: lengths,
+                       self.keep_prob_dropout: 1.0}
         encoded_sentences = self.sess.run(self.encoded_sentences, feed_dict=encode_dict)
         return np.array(encoded_sentences)
 
@@ -329,6 +333,17 @@ class Skipthought_model(object):
     def train(self, data):
         batch_time = time.time()
         enc_lengths, enc_data, post_data, post_lab, pre_data, pre_lab, post_masks, pre_masks = data[2:]
+
+        length_mask = (enc_lengths<30)*(np.sum(post_masks,1)<30)*(np.sum(pre_masks,1)<30)
+        enc_lengths = enc_lengths[length_mask]
+        enc_data = enc_data[length_mask]
+        post_masks = np.array(post_masks)[length_mask]
+        post_data = np.array(post_data)[length_mask]
+        post_lab = np.array(post_lab)[length_mask]
+        pre_masks = np.array(pre_masks)[length_mask]
+        pre_data = np.array(pre_data)[length_mask]
+        pre_lab = np.array(pre_lab)[length_mask]
+
         try:
             self.corpus_length = len(enc_data)
             perm = np.random.permutation(self.corpus_length)
@@ -362,7 +377,8 @@ class Skipthought_model(object):
                     self.post_labels: batch_post_labels,
                     self.pre_sentences_masks: batch_pre_masks,
                     self.pre_inputs: batch_pre_inputs,
-                    self.pre_labels: batch_pre_labels}
+                    self.pre_labels: batch_pre_labels,
+                    self.keep_prob_dropout: self.para.keep_prob_dropout}
                 _, loss_val, batch_summary, current_step = self.sess.run(
                     [self.opt_op, self.loss, self.merged, self.global_step], 
                     feed_dict=train_dict)
@@ -470,7 +486,7 @@ def make_paras(path):
         hidden_size = 2400, 
         hidden_layers = 1, 
         batch_size = 128, 
-        keep_prob_dropout = 1.0, 
+        keep_prob_dropout = 0.8, 
         learning_rate = 0.0008, 
         bidirectional = False,
         decay_steps = 400000,
@@ -556,7 +572,7 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    paras = make_paras('../models/toronto_n9/')
+    paras = make_paras('../models/toronto_n13/')
     # preprocess(
     #     corpus_name = 'toronto', 
     #     model_path = '../models/toronto_n5/',
@@ -564,7 +580,7 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = '../models/toronto_n9/',
+    train(model_path = '../models/toronto_n13/',
           training_data_path = '../training_data/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')

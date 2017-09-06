@@ -4,6 +4,8 @@ eval/
 tensorboard/
 corpus/
 training_data/
+thesis_tb/
 results.xlsx
 ~$results.xlsx
+
 
