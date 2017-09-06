@@ -92,14 +92,14 @@ def _expand_vocabulary(skip_thoughts_emb, skip_thoughts_vocab, word2vec):
     return expanded_vocab, expanded_embeddings
 
 # path = '../models/toronto_n5/'
-path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
+path = '/cluster/project2/mr/vetterle/skipthought/toronto_n13/'
 
 print('Loading trained skipthought word embeddings')
 with open(path + 'paras.pkl', 'rb') as f:
     paras = pkl.load(f)
 skipthought_embeddings = load_skip_thoughts_embeddings(
     path = path, 
-    step = 75000)
+    step = 425000)
 with open(path + 'vocab.pkl', 'rb') as f:
     skipthought_vocab = pkl.load(f)
 
@@ -122,10 +122,3 @@ expanded_vocab, expanded_embeddings = _expand_vocabulary(
 #     print('Expanded vocab and embeddings already exist in %s' % path)
 
 # encas = model.encoded_sentences.eval(session = model.sess, feed_dict={model.graph.get_tensor_by_name('embedding_lookup:0'): test, model.sentences_lengths: test_lengths})
-
-
-
-
-
-
-
