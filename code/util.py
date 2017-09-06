@@ -156,7 +156,7 @@ def sick_encode(sentences, dictionary, embeddings = None):
         tokenised_sentences.append(this_sentence)
         length = len(this_sentence)
         max_sent_len = length if length > max_sent_len else max_sent_len
-    print('\n%d lines to do\n' % lines)
+    # print('\n%d lines to do\n' % lines)
 
     i = 0
     if type(embeddings) == np.ndarray:
@@ -168,7 +168,7 @@ def sick_encode(sentences, dictionary, embeddings = None):
             [lines], 0, 
             dtype=np.int32)
         for sentence in tokenised_sentences:
-            print('\rSentence %d' %(i+1), end='')
+            # print('\rSentence %d' %(i+1), end='')
             words = []
             for word in sentence:
                 if word not in dictionary:
@@ -187,7 +187,7 @@ def sick_encode(sentences, dictionary, embeddings = None):
             [lines], 0, 
             dtype=np.int32)
         for sentence in tokenised_sentences:
-            print('\rSentence %d' %(i+1), end='')
+            # print('\rSentence %d' %(i+1), end='')
             words = []
             for word in sentence:
                 if word not in dictionary:
