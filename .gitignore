@@ -1,11 +1,16 @@
-__pycache__/
-models/
-eval/
-tensorboard/
-corpus/
-training_data/
-thesis_tb/
-results.xlsx
-~$results.xlsx
+**/__pycache__/
+
+skipthought/models/
+skipthought/eval/
+skipthought/tensorboard/
+skipthought/corpus/
+skipthought/training_data/
+skipthought/thesis_tb/
+
+tasks/plots/
+tasks/preprocess_data/
+tasks/saved_models/
+
+
 
 
