@@ -71,11 +71,17 @@ class Infersent_model(object):
             "labels")
 
         with tf.variable_scope("encoder") as varscope:
-            cell = tf.contrib.rnn.LSTMCell(self.para.hidden_size)
-            cell = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob = self.para.keep_prob_dropout)
+
+            fw_cell = tf.contrib.rnn.DropoutWrapper(
+                tf.contrib.rnn.LSTMCell(self.para.hidden_size), 
+                input_keep_prob = self.para.keep_prob_dropout)
+            
+            bw_cell = tf.contrib.rnn.DropoutWrapper(
+                tf.contrib.rnn.LSTMCell(self.para.hidden_size), 
+                input_keep_prob = self.para.keep_prob_dropout)
 
             s1_sentences_states, s1_last_state = tf.nn.bidirectional_dynamic_rnn(
-                cell, cell, 
+                fw_cell, bw_cell, 
                 inputs = self.s1_embedded, 
                 sequence_length = self.s1_lengths, 
                 dtype=tf.float32, 
@@ -88,7 +94,7 @@ class Infersent_model(object):
             varscope.reuse_variables()
 
             s2_sentences_states, s2_last_state = tf.nn.bidirectional_dynamic_rnn(
-                cell, cell, 
+                fw_cell, bw_cell, 
                 inputs = self.s2_embedded, 
                 sequence_length = self.s2_lengths, 
                 dtype=tf.float32, 
@@ -316,7 +322,7 @@ class Infersent_model(object):
 def make_paras(path):
     if not os.path.exists(path):
         os.makedirs(path)
-    paras = Infersent_para(embedding_size = 620, 
+    paras = Infersent_para(embedding_size = 300, 
         hidden_size = 2048, 
         hidden_layers = 1,
         batch_size = 64, 
@@ -344,8 +350,8 @@ if __name__ == '__main__':
 
     train, dev, test = get_nli(path)
 
-    # word_vec = build_vocab(train['s1'] + train['s2'] + dev['s1'] + dev['s2'] + test['s1'] + test['s2'], GLOVE_PATH)
-    word_vec = build_vocab(train['s1'] + train['s2'] + dev['s1'] + dev['s2'] + test['s1'] + test['s2'], SKIPTHOUGHT_PATH, skipthought=True)
+    word_vec = build_vocab(train['s1'] + train['s2'] + dev['s1'] + dev['s2'] + test['s1'] + test['s2'], GLOVE_PATH)
+    # word_vec = build_vocab(train['s1'] + train['s2'] + dev['s1'] + dev['s2'] + test['s1'] + test['s2'], SKIPTHOUGHT_PATH, skipthought=True)
     print(word_vec['<s>'].shape)
     if not os.path.exists(model_path):
         os.makedirs(model_path)
