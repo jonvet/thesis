@@ -1,9 +1,9 @@
 import tensorflow as tf
 import numpy as np
-import util
-from util import word_vocab
-from util import sent_to_int
-from util import finalise_vocab
+
+from . import util
+from . import gru_cell
+
 from tensorflow.contrib.tensorboard.plugins import projector
 import time
 from sys import stdout
@@ -13,9 +13,9 @@ import operator
 import csv
 import pickle as pkl
 from collections import defaultdict
-import gru_cell
 
-class Skipthought_para(object):
+
+class Skipthought_para():
 
     def __init__(self, embedding_size, hidden_size, hidden_layers, batch_size, keep_prob_dropout, learning_rate, 
             bidirectional, decay_steps, decay, predict_step, max_sent_len, uniform_init_scale, clip_gradient_norm, save_every):
@@ -172,11 +172,11 @@ class Skipthought_model(object):
 
     def decoder(self, name, decoder_input, targets, mask, initial_state, reuse_logits):
 
-        # cell = gru_cell.LayerNormGRUCell(
-        #     self.para.hidden_size,
-        #     w_initializer=self.initializer,
-        #     u_initializer=random_orthonormal_initializer,
-        #     b_initializer=tf.constant_initializer(0.0))
+        cell = gru_cell.LayerNormGRUCell(
+            self.para.hidden_size,
+            w_initializer=self.initializer,
+            u_initializer=random_orthonormal_initializer,
+            b_initializer=tf.constant_initializer(0.0))
 
         # cell = gru_cell.b_LayerNormGRUCell(
         #     self.para.hidden_size,
@@ -185,11 +185,11 @@ class Skipthought_model(object):
         #     b_initializer=tf.constant_initializer(0.0),
         #     encoded_sentences=initial_state)
 
-        cell = gru_cell.b_LayerNormGRUCell2(
-            self.para.hidden_size,
-            w_initializer=self.initializer,
-            u_initializer=random_orthonormal_initializer,
-            b_initializer=self.initializer)
+        # cell = gru_cell.b_LayerNormGRUCell2(
+        #     self.para.hidden_size,
+        #     w_initializer=self.initializer,
+        #     u_initializer=random_orthonormal_initializer,
+        #     b_initializer=self.initializer)
 
         with tf.variable_scope(name) as scope:
       
@@ -237,7 +237,7 @@ class Skipthought_model(object):
     def load_model(self, path, step):
         self.sess = tf.Session(graph = self.graph)
         saver = tf.train.Saver()
-        saver.restore(self.sess, path + '/saved_models/step_%d' % step)
+        saver.restore(self.sess, path + 'saved_models/step_%d' % step)
         print('Model restored')
 
     def evaluate(self, data, mode = 'max', index = None):
@@ -441,8 +441,8 @@ def preprocess(corpus_name, model_path, corpus_path, final_path, vocab_size, max
         vocab = defaultdict(int)
         for part in parts:
             print('\nProcessing file:', part)
-            vocab = word_vocab(part, vocab_name=part, vocab=vocab)
-        vocab = finalise_vocab(vocab, vocab_size)
+            vocab = util.word_vocab(part, vocab_name=part, vocab=vocab)
+        vocab = util.finalise_vocab(vocab, vocab_size)
         with open(model_path + 'vocab.pkl', 'wb') as f:
             pkl.dump(vocab, f)
         print('\nVocab created')
@@ -464,7 +464,7 @@ def get_training_data(path, vocab, corpus_name, max_sent_len):
     Create datasets for encoder and decoders
     '''
 
-    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab, dec_masks = sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
+    sent_lengths, max_sent_len, enc_data, dec_data, dec_lab, dec_masks = util.sent_to_int(path, dictionary=vocab, max_sent_len=max_sent_len, decoder=True)
     enc_lengths = sent_lengths[1:-1] 
     enc_data = enc_data[1:-1]
 
@@ -562,7 +562,7 @@ def test(path, epoch):
         paras = pkl.load(f)
     with open(path + 'vocab.pkl', 'rb') as f:
         vocab = pkl.load(f)
-    with open('../training_data/gingerbread/data_0.pkl', 'rb') as f:
+    with open('./training_data/gingerbread/data_0.pkl', 'rb') as f:
         data = pkl.load(f)
     model = Skipthought_model(vocab = vocab, parameters = paras, path = path)
     model.load_model(path, epoch)
@@ -572,7 +572,7 @@ def test(path, epoch):
 if __name__ == '__main__':
 
     tf.reset_default_graph()
-    paras = make_paras('../models/toronto_n13/')
+    paras = make_paras('./models/toronto_n13/')
     # preprocess(
     #     corpus_name = 'toronto', 
     #     model_path = '../models/toronto_n5/',
@@ -580,8 +580,8 @@ if __name__ == '__main__':
     #     final_path = '/cluster/project6/mr_corpora/vetterle/toronto_1m',
     #     vocab_size = 20000, 
     #     max_sent_len = paras.max_sent_len)
-    train(model_path = '../models/toronto_n13/',
-          training_data_path = '../training_data/')
+    train(model_path = './models/toronto_n13/',
+          training_data_path = './training_data/')
 
     # paras = make_paras('../models/skipthought_gingerbread/')
     # preprocess(

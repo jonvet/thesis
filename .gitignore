@@ -1,17 +1,15 @@
-**/__pycache__/
-**/models/
-**/training_data/
-**/tensorboard/
+/__pycache__/
 
-skipthought/eval/
-skipthought/corpus/
-skipthought/thesis_tb/
+skipthought/*
+!skipthought/*.py
 
-tasks/plots/
-tasks/preprocess_data/
-tasks/saved_models/
+infersent/*
+!infersent/*.py
 
-infersent/dataset/
+tasks/*
+!tasks/*.py
+
+
 
 
 

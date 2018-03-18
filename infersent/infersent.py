@@ -9,8 +9,8 @@ import operator
 import csv
 import pickle as pkl
 from collections import defaultdict
-from data import get_nli
-from data import build_vocab
+from infersent.data import get_nli
+from infersent.data import build_vocab
 import shutil
 
 class Infersent_para(object):
@@ -335,18 +335,18 @@ def make_paras(path):
         uniform_init_scale = 0.1,
         clip_gradient_norm=5.0,
         save_every=1000000,
-        epochs = 100)
+        epochs = 20)
     with open(path + 'paras.pkl', 'wb') as f:
         pkl.dump(paras, f)
     return paras
 
 if __name__ == '__main__':
-    path = '../dataset/SNLI/'
-    GLOVE_PATH = "../dataset/GloVe/glove.840B.300d.txt"
+    path = './dataset/SNLI/'
+    GLOVE_PATH = "./dataset/GloVe/glove.840B.300d.txt"
     SKIPTHOUGHT_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
     # SKIPTHOUGHT_PATH = "/Users/Jonas/Documents/Repositories/skipthought/models/toronto_n5/"
-    output_path = '../training_data/'
-    model_path = '../models/m9/'
+    output_path = './training_data/'
+    model_path = './models/m9/'
 
     train, dev, test = get_nli(path)
 
