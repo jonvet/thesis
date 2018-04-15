@@ -9,6 +9,8 @@ infersent/*
 tasks/*
 !tasks/*.py
 
+forget/*
+
 
 
 

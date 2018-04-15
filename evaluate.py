@@ -157,7 +157,7 @@ MODELS = ['skipthought', 'infersent']
 TASKS = ['Predict_words', 'Predict_length', 'Predict_dep']
 
 MODEL = MODELS[0]
-TASK = TASKS[0]
+TASK = TASKS[1]
 CBOW = False
 UNTRAINED = False
 
@@ -173,7 +173,7 @@ if __name__ == '__main__':
 
         CBOW = False
 
-        SAVE_PATH = './tasks/saved_models/{}/{}/{}'.format(ODEL, TASK, 'CBOW' if CBOW else 'noCBOW')
+        SAVE_PATH = './tasks/saved_models/{}/{}/{}'.format(MODEL, TASK, 'CBOW' if CBOW else 'noCBOW')
 
         tf.reset_default_graph()
         encoder = encoder.Encoder(
@@ -183,15 +183,16 @@ if __name__ == '__main__':
             snli_path = SNLI_PATH)
         train, dev, test = predict_length.setup(
             snli_path = SNLI_PATH,
-            toy = True)
+            toy = False)
         task = predict_length.Predict_length(
             encoder = encoder,
-            learning_rate = _learning_rate)
+            learning_rate = _learning_rate,
+            epochs=10)
         task.train_model(train, dev, y_train = None, y_dev = None, save_path = SAVE_PATH)
         test_labels = None
        
-        confusion_matrix, df_accuracy,_ = test_model(test, test_labels, 1,
-            saved_model_path = '%s/%s/%s/sent_words0%s%s' % (SAVE_PATH, MODEL, TASK, CBOW), mclasses = None)
+        confusion_matrix, df_accuracy,_ = task.test_model(test, test_labels, 1,
+            saved_model_path =  SAVE_PATH, mclasses = None)
 
     if TASK=='Predict_words':
 
@@ -279,7 +280,6 @@ if __name__ == '__main__':
         confusion_matrix, df_accuracy,_ = test_model(test, test_labels, 1,
             saved_model_path = '%s/%s/%s/sent_words%d%s%s' % (SAVE_PATH, MODEL, TASK, n_iter, CBOW, UNTRAINED), mclasses = mclasses)
 
-    quit()
     df_cm = pd.DataFrame(confusion_matrix, index = task.labels_list, columns = task.labels_list)
     df_cm_norm = df_cm/df_cm.sum(axis=0)
     df_cm_norm = df_cm_norm.fillna(0)
