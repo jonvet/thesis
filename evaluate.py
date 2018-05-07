@@ -81,7 +81,7 @@ if __name__ == '__main__':
         task = predict_length.Predict_length(
             encoder = encoder,
             learning_rate = _learning_rate,
-            epochs=10)
+            epochs=_epochs)
         task.train_model(train, dev, y_train = None, y_dev = None, save_path = SAVE_PATH)
         test_labels = None
        
