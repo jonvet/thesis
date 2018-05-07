@@ -50,7 +50,7 @@ class Predict_length(object):
             trainable = False)
 
         self.logits = tf.contrib.layers.fully_connected(
-            self.X, 7, activation_fn=None)
+            self.X, 6, activation_fn=None, scope='output_layer')
         self.prediction = tf.argmax(self.logits, 1)
 
         self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -133,8 +133,8 @@ class Predict_length(object):
 
         if not os.path.exists(path):
             os.makedirs(path)
-        saver = tf.train.Saver()
-        saver.save(sess = self.sess, save_path = path + '/step_%d' % step, write_state = False)
+        saver = tf.train.Saver(var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='output_layer'))
+        saver.save(sess = self.sess, save_path = path + '/step_%d' % step)
 
     def load_model(self, path, step):
 
@@ -162,7 +162,6 @@ class Predict_length(object):
                 sentences = train_perm[step:(step+self.batch_size)]
                 sentence_data = self.encoder.embed(sentences)
                 labels = self.get_labels(sentence_data, sentences)
-
                 loss = self.run_batch(sentence_data, sentences, labels, train=True)
                 avg_loss += loss/steps
                 print('\rBatch loss at step %d: %0.5f' % (step/self.batch_size, loss), end = '    ')

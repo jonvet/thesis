@@ -17,14 +17,12 @@ import encoder
 import matplotlib.pyplot as plt 
 import seaborn as sn
 
-cluster = False
+cluster = True
 
 if cluster:
-    SKIPTHOUGHT_PATH = '/home/vetterle/skipthought/code/'
     # MODEL_PATH = '/cluster/project2/mr/vetterle/infersent/m6/'
     MODEL_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
 
-    SKIPTHOUGHT_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
     INFERSENT_PATH = '/home/vetterle/InferSent/code/'
     SICK_PATH = '/home/vetterle/skipthought/eval/SICK/'
     SNLI_PATH = '/home/vetterle/InferSent/dataset/SNLI/'
@@ -32,7 +30,6 @@ if cluster:
     SAVE_PATH = '/cluster/project2/mr/vetterle/thesis'
 
 else:
-    # SKIPTHOUGHT_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/models/toronto_n5/'
     # MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/models/m6/'
     MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/models/toronto_n5/'
 
@@ -40,7 +37,7 @@ else:
     SICK_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/eval/SICK/'
     SNLI_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/dataset/SNLI/'
     TORONTO_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/corpus/'
-    SAVE_PATH = '..'
+    SAVE_PATH = './'
 
 # sys.path.append('./')
 # sys.path.append(SKIPTHOUGHT_PATH)
@@ -49,109 +46,6 @@ else:
 # import skipthought
 from skipthought.skipthought import Skipthought_para
 
-
-def train_model(X_train, X_dev, y_train, y_dev):
-    config = tf.ConfigProto()
-    config.gpu_options.per_process_gpu_memory_fraction = 0.7
-    task.sess = tf.Session(graph = task.graph, config=config)
-    tf.global_variables_initializer().run(session = task.sess)
-
-    best_f1 = 0
-    for epoch in range(_epochs):
-        print('\nStarting epoch %d' % epoch)
-        perm = np.random.permutation(len(X_train))
-        train_perm = X_train[perm]
-
-        if TASK == 'Predict_dep':
-            train_labels_perm = np.array(y_train)[perm]
-        elif TASK == 'Predict_length':
-            y_dev = None
-        elif TASK == 'Predict_words2':
-            train_labels_perm = [np.array(y_train[0])[perm], np.array(y_train[1])[perm]]
-
-        avg_loss = 0
-        dev_loss = 0
-        dev_accuracy = 0
-
-        steps = len(X_train) // _batch_size
-
-        for step in range(0, len(X_train), _batch_size):
-
-            sentences = train_perm[step:(step+_batch_size)]
-            sentence_data = embed(sentences)
-            
-            if TASK == 'Predict_dep':
-                labels = train_labels_perm[step:(step+_batch_size)]
-            elif TASK == 'Predict_length':
-                labels = task.get_labels(sentence_data, sentences)
-            elif TASK == 'Predict_words2':
-                labels = [train_labels_perm[0][step:(step+_batch_size)], train_labels_perm[1][step:(step+_batch_size)]]
-            loss = task.run_batch(sentence_data, sentences, labels, train=True)
-            avg_loss += loss/steps
-            print('\rBatch loss at step %d: %0.5f' % (step/_batch_size, loss), end = '    ')
-           
-        _,_,f1 = test_model(X_dev, y_dev)
-
-        if f1>best_f1:
-            save_path = '%s/%s/%s/sent_words%d%s%s/' % (SAVE_PATH, MODEL, TASK, n_iter, CBOW, UNTRAINED)
-            task.save_model(save_path, 1)   
-        else:
-            break
-
-def test_model(X, y, step = None, saved_model_path = None, mclasses = None):
-
-    if saved_model_path != None:
-        task.sess = tf.Session(graph = task.graph)
-        task.load_model(saved_model_path, step)
-
-    num_classes = len(task.labels_list)
-    dev_loss, dev_accuracy = 0, 0
-    dev_f1, dev_pre, dev_rec, dev_counts = np.zeros([num_classes, 1]), np.zeros([num_classes, 1]), np.zeros([num_classes, 1]), np.zeros([num_classes, 1])
-    dev_confusion = np.zeros([num_classes, num_classes])
-    dev_steps = len(X) // _batch_size
-
-    all_labels, all_preds = [], []
-
-    for step in range(0, len(X), _batch_size):
-
-        print('\rStep %d/%d' % (step/_batch_size, dev_steps), end = '    ')
-
-        sentences = X[step:(step+_batch_size)]
-        sentence_data = embed(sentences)
-
-        if TASK == 'Predict_dep':
-            labels = y[step:(step+_batch_size)]
-        elif TASK == 'Predict_length':
-            labels = task.get_labels(sentence_data, sentences)
-        elif TASK == 'Predict_words2':
-            labels = [y[0][step:(step+_batch_size)], y[1][step:(step+_batch_size)]]
-
-        prediction, loss, labels = task.run_batch(sentence_data, sentences, labels, train=False, mclasses=mclasses)
-
-        accuracy = task.get_accuracy(sentence_data, labels, prediction)
-        dev_accuracy += accuracy/dev_steps
-
-        all_labels += list(labels)
-        all_preds += list(prediction)
-
-    all_labels = np.array(all_labels)
-    all_preds = np.array(all_preds)
-    dev_pre, dev_rec, dev_f1, dev_counts = task.get_f1_pre_rec(all_labels, all_preds)
-    matrix = task.get_confusion(all_labels, all_preds)
-
-    print('Test accuracy: %0.4f\n' % dev_accuracy)
-    weights = dev_counts/np.sum(dev_counts)
-    weights_no_none = dev_counts[1:]/np.sum(dev_counts[1:])
-    weighted_f1 = float(np.matmul(weights.T,dev_f1))
-    weighted_f1_no_none = float(np.matmul(weights_no_none.T,dev_f1[1:]))
-    print('Weighted F1 score: %0.4f\n' % weighted_f1)
-    print('Weighted F1 score (no none): %0.4f\n' % weighted_f1_no_none)
-
-    df_accuracy = pd.DataFrame(data=np.concatenate((dev_f1, dev_pre, dev_rec, dev_counts), axis=1),
-        columns=['F1', 'Precision', 'Recall', 'n'], index=task.labels_list)
-    print(df_accuracy)
-    # return dev_confusion, df_accuracy, weighted_f1
-    return dev_confusion, df_accuracy, weighted_f1_no_none
 
 MODELS = ['skipthought', 'infersent']
 TASKS = ['Predict_words', 'Predict_length', 'Predict_dep']
@@ -163,7 +57,7 @@ UNTRAINED = False
 
 _learning_rate = 0.0001
 _batch_size = 64
-_epochs = 10
+_epochs = 20
 _dropout = 0.9
         
 
@@ -243,7 +137,7 @@ if __name__ == '__main__':
             m_iter = m_iter, 
             vocab = encoder.model.vocab, 
             snli_path = SNLI_PATH,
-            toy = True)
+            toy = False)
         task = predict_dep.Predict_dep(
             dependency_list = all_relations_list, 
             learning_rate = _learning_rate, 
