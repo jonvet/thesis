@@ -1,24 +1,16 @@
 import sys
-try:
-    sys.path.remove('/usr/local/lib/python2.7/site-packages')
-    sys.path.remove('/usr/local/Cellar/matplotlib/1.5.1/libexec/lib/python2.7/site-packages')
-    sys.path.remove('/usr/local/Cellar/numpy/1.12.0/libexec/nose/lib/python2.7/site-packages')
-except:
-    next
-
 import tensorflow as tf
 import numpy as np
 import pickle as pkl 
 from collections import defaultdict
-import pandas as pd
 import os
-from predict_words import Predict_words
-from predict_words2 import Predict_words2
-from predict_length import Predict_length
-from predict_dep import Predict_dep
 import matplotlib.pyplot as plt
 import seaborn as sn
-import random
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from infersent.data import get_nli
+from skipthought.skipthought import Skipthought_model
+from infersent.infersent import Infersent_model
 
 cluster = False
 CBOW = True
@@ -29,9 +21,7 @@ _dropout = 0.9
 
 if cluster:
     SKIPTHOUGHT_PATH = '/home/vetterle/skipthought/code/'
-    # MODEL_PATH = '/cluster/project2/mr/vetterle/infersent/m6/'
     MODEL_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
-
     SKIPTHOUGHT_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
     INFERSENT_PATH = '/home/vetterle/InferSent/code/'
     SICK_PATH = '/home/vetterle/skipthought/eval/SICK/'
@@ -40,9 +30,7 @@ if cluster:
     SAVE_PATH = '/cluster/project2/mr/vetterle/thesis'
 
 else:    
-    # MODEL_PATH = '/Users/Jonas/Documents/Repositories/InferSent/models/m6/'
     MODEL_PATH = '/Users/Jonas/Documents/Repositories/skipthought/models/toronto_n5/'
-
     SKIPTHOUGHT_PATH = '/Users/Jonas/Documents/Repositories/skipthought/models/toronto_n5/'
     INFERSENT_PATH = '/Users/Jonas/Documents/Repositories/InferSent/code/'
     SICK_PATH = '/Users/Jonas/Documents/Repositories/skipthought/eval/SICK/'
@@ -50,9 +38,7 @@ else:
     TORONTO_PATH = '/Users/Jonas/Documents/Repositories/skipthought/corpus/'
     SAVE_PATH = '..'
 
-sys.path.append(SKIPTHOUGHT_PATH)
-sys.path.append(INFERSENT_PATH)
-from data import get_nli
+
 
 MODELS = ['skipthought', 'infersent']
 MODEL = MODELS[0]
@@ -72,8 +58,6 @@ with open(MODEL_PATH + 'vocab.pkl', 'rb') as f:
     vocab = pkl.load(f)
 
 if MODEL == 'skipthought':
-    from skipthought import Skipthought_para
-    from skipthought import Skipthought_model
     step = 488268
     with open(MODEL_PATH + 'paras.pkl', 'rb') as f:
         paras = pkl.load(f)
@@ -105,8 +89,6 @@ if MODEL == 'skipthought':
     embeddings = None
 
 elif MODEL == 'infersent':
-    from infersent import Infersent_para
-    from infersent import Infersent_model
     # step = 77247
     step = 128745
     with open(MODEL_PATH + 'paras.pkl', 'rb') as f:

@@ -1,28 +1,15 @@
-import sys
-try:
-    sys.path.remove('/usr/local/lib/python2.7/site-packages')
-    sys.path.remove('/usr/local/Cellar/matplotlib/1.5.1/libexec/lib/python2.7/site-packages')
-    sys.path.remove('/usr/local/Cellar/numpy/1.12.0/libexec/nose/lib/python2.7/site-packages')
-except:
-    next
-
 import tensorflow as tf
-import numpy as np
-import pandas as pd
 import os
 import tasks.predict_dep as predict_dep
 import tasks.predict_length as predict_length
 import tasks.predict_words as predict_words
+import tasks.predict_sent as predict_sent
 import encoder
-import matplotlib.pyplot as plt 
-import seaborn as sn
 
-cluster = True
+cluster = False
 
 if cluster:
-    # MODEL_PATH = '/cluster/project2/mr/vetterle/infersent/m6/'
     MODEL_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
-
     INFERSENT_PATH = '/home/vetterle/InferSent/code/'
     SICK_PATH = '/home/vetterle/skipthought/eval/SICK/'
     SNLI_PATH = '/home/vetterle/InferSent/dataset/SNLI/'
@@ -30,28 +17,18 @@ if cluster:
     SAVE_PATH = '/cluster/project2/mr/vetterle/thesis'
 
 else:
-    # MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/models/m6/'
     MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/models/toronto_n5/'
-
     INFERSENT_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/code/'
     SICK_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/eval/SICK/'
     SNLI_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/dataset/SNLI/'
     TORONTO_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/corpus/'
     SAVE_PATH = './'
 
-# sys.path.append('./')
-# sys.path.append(SKIPTHOUGHT_PATH)
-# sys.path.append(INFERSENT_PATH)
-# from infersent.data import get_nli
-# import skipthought
-from skipthought.skipthought import Skipthought_para
-
-
 MODELS = ['skipthought', 'infersent']
-TASKS = ['Predict_words', 'Predict_length', 'Predict_dep']
+TASKS = ['Predict_words', 'Predict_length', 'Predict_dep', 'Predict_sent']
 
 MODEL = MODELS[0]
-TASK = TASKS[1]
+TASK = TASKS[3]
 CBOW = False
 UNTRAINED = False
 
@@ -60,6 +37,7 @@ _batch_size = 64
 _epochs = 20
 _dropout = 0.9
         
+MODE = 'train'
 
 if __name__ == '__main__':
 
@@ -68,9 +46,11 @@ if __name__ == '__main__':
         CBOW = False
 
         SAVE_PATH = './tasks/saved_models/{}/{}/{}'.format(MODEL, TASK, 'CBOW' if CBOW else 'noCBOW')
+        if not os.path.exists(SAVE_PATH):
+            os.makedirs(SAVE_PATH)
 
         tf.reset_default_graph()
-        encoder = encoder.Encoder(
+        enc = encoder.Encoder(
             model_name = MODEL, 
             model_path = MODEL_PATH, 
             cbow = CBOW,
@@ -79,41 +59,95 @@ if __name__ == '__main__':
             snli_path = SNLI_PATH,
             toy = False)
         task = predict_length.Predict_length(
-            encoder = encoder,
+            encoder = enc,
             learning_rate = _learning_rate,
             epochs=_epochs)
-        task.train_model(train, dev, y_train = None, y_dev = None, save_path = SAVE_PATH)
-        test_labels = None
-       
-        confusion_matrix, df_accuracy,_ = task.test_model(test, test_labels, 1,
-            saved_model_path =  SAVE_PATH, mclasses = None)
 
-    if TASK=='Predict_words':
+        # if MODE == 'train':
+        #     task.train_model(train, dev, y_train = None, y_dev = None, save_path = SAVE_PATH)
+        # elif MODE == 'test':
+        #     task.load_output_layer(path = SAVE_PATH)
+        #     _,_,_ = task.test_model(test, None)
+        # elif MODE == 'test_forget':
+        #     task.load_output_layer(path = SAVE_PATH)
+        #     task.load_ft(path = SAVE_PATH) 
+        #     _,_,_ = task.test_model(test, None)
+
+        task.sess = tf.Session(graph = task.graph)
+        tf.global_variables_initializer().run(session = task.sess)
+        _,_,_ = task.test_model(test, None)
+
+        # task.load_output_layer(path = SAVE_PATH)
+        # _,_,_ = task.test_model(test, None)
+
+        # task.load_ft(path = SAVE_PATH)
+        # _,_,_ = task.test_model(test, None)
+
+    elif TASK=='Predict_sent':
 
         CBOW = False
-        UNTRAINED = False
-        SAVE_PATH = './tasks/saved_models/{}/{}/{}{}'.format(
-            MODEL, TASK, 'CBOW' if CBOW else 'noCBOW', 'UNTRAINED' if UNTRAINED else 'TRAINED')
+
+        SAVE_PATH = './tasks/saved_models/{}/{}/{}'.format(MODEL, TASK, 'CBOW' if CBOW else 'noCBOW')
+        if not os.path.exists(SAVE_PATH):
+            os.makedirs(SAVE_PATH)
 
         tf.reset_default_graph()
-        encoder = encoder.Encoder(
+        enc = encoder.Encoder(
             model_name = MODEL, 
             model_path = MODEL_PATH, 
+            cbow = CBOW,
+            snli_path = SNLI_PATH)
+        train, dev, test = predict_sent.setup(
             snli_path = SNLI_PATH,
-            untrained = UNTRAINED, 
-            cbow = CBOW)
+            toy = False)
+        task = predict_sent.Predict_sent(
+            encoder = enc,
+            learning_rate = _learning_rate,
+            epochs=_epochs)
+
+        if MODE == 'train':
+            task.train_model(train, dev, y_train = None, y_dev = None, save_path = SAVE_PATH)
+        elif MODE == 'test':
+            task.load_output_layer(path = SAVE_PATH)
+            _,_,_ = task.test_model(test, None)
+        elif MODE == 'test_forget':
+            task.load_output_layer(path = SAVE_PATH)
+            task.load_ft(path = SAVE_PATH) 
+            _,_,_ = task.test_model(test, None)
+
+
+
+    elif TASK=='Predict_words':
+
+        CBOW = False
+
+        SAVE_PATH = './tasks/saved_models/{}/{}/{}'.format(MODEL, TASK, 'CBOW' if CBOW else 'noCBOW')
+        if not os.path.exists(SAVE_PATH):
+            os.makedirs(SAVE_PATH)
+
+        tf.reset_default_graph()
+        enc = encoder.Encoder(
+            model_name = MODEL, 
+            model_path = MODEL_PATH, 
+            cbow = CBOW,
+            snli_path = SNLI_PATH)
         train, dev, test, pos, neg = predict_words.setup(
             snli_path = SNLI_PATH,
-            toy = True)
+            toy = False)
         task = predict_words.Predict_words(
+            encoder = enc,
             learning_rate = _learning_rate,
-            batch_size = _batch_size, 
-            encoder = encoder)
+            epochs=_epochs)
 
-        task.train_model(train, dev, [pos[0], neg[0]], [pos[1], neg[1]], save_path = SAVE_PATH)
-
-        confusion_matrix, df_accuracy,_ = task.test_model(test, [pos[2], neg[2]], 1,
-            saved_model_path = '%s/%s/%s/sent_words%d%s%s' % (SAVE_PATH, MODEL, TASK, n_iter, CBOW, UNTRAINED), mclasses = None)
+        if MODE == 'train':
+            task.train_model(X_train=train, X_dev=dev, y_train=[pos[0], neg[0]], y_dev=[pos[1], neg[1]], save_path = SAVE_PATH)
+        elif MODE == 'test':
+            task.load_output_layer(path = SAVE_PATH)
+            _,_,_ = task.test_model(test, None)
+        elif MODE == 'test_forget':
+            task.load_output_layer(path = SAVE_PATH)
+            task.load_ft(path = SAVE_PATH) 
+            _,_,_ = task.test_model(test, None)
 
 
     elif TASK=='Predict_dep':
@@ -173,15 +207,3 @@ if __name__ == '__main__':
             saved_model_path = '%s/%s/%s/sent_words%d%s%s' % (SAVE_PATH, MODEL, TASK, n_iter, CBOW, UNTRAINED), mclasses = None)
         confusion_matrix, df_accuracy,_ = test_model(test, test_labels, 1,
             saved_model_path = '%s/%s/%s/sent_words%d%s%s' % (SAVE_PATH, MODEL, TASK, n_iter, CBOW, UNTRAINED), mclasses = mclasses)
-
-    df_cm = pd.DataFrame(confusion_matrix, index = task.labels_list, columns = task.labels_list)
-    df_cm_norm = df_cm/df_cm.sum(axis=0)
-    df_cm_norm = df_cm_norm.fillna(0)
-    sn.set(font_scale=0.7)
-    sn.heatmap(df_cm_norm)
-    plt.yticks(rotation=0)
-    plt.xticks(rotation=90)
-    # plt.show()
-    # plt.savefig('conf_matrix_all.png')
-    plt.savefig('conf_matrix_no_mclass.png')
-    plt.close()

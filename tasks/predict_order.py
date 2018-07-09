@@ -2,10 +2,8 @@ import tensorflow as tf
 import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
-from sklearn.metrics import roc_auc_score
 import os
 import random
-from collections import defaultdict
 
 class Predict_words2(object):
 

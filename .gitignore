@@ -10,6 +10,9 @@ tasks/*
 !tasks/*.py
 
 forget/*
+!forget/*.py
+
+random_code/*
 
 lilscript.py
 save_test/

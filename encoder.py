@@ -1,8 +1,5 @@
 import tensorflow as tf
-from skipthought.skipthought import Skipthought_para
 from skipthought.skipthought import Skipthought_model
-from skipthought.skipthought import gru_cell
-from infersent.infersent import Infersent_para
 from infersent.infersent import Infersent_model
 from infersent.data import get_nli
 import pickle as pkl
@@ -89,7 +86,7 @@ class Encoder(object):
 
     def embed(self, sentences):
 
-        sentences = [[w for w in sentence.split(' ')] for sentence in sentences]
+        sentences = [[w for w in sentence.lower().split(' ')] for sentence in sentences]
         sentences_embedded, sentences_lengths = [], []
 
         if self.model_name == 'skipthought':

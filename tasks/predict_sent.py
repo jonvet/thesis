@@ -3,12 +3,18 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
 import os
-from infersent.data import get_nli
 import pickle as pkl
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
+from nltk.sentiment import vader
+import sys
 
-class Predict_length(object):
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from infersent.data import get_nli
+
+vad = vader.SentimentIntensityAnalyzer()
+
+class Predict_sent(object):
 
     def __init__(self,
         encoder,
@@ -26,7 +32,7 @@ class Predict_length(object):
         self.epochs = epochs
         self.sent_dim = encoder.sent_dim
 
-        self.labels_list = ['0-4', '5-6' ,'7-8' ,'9-10' ,'11-12', '14-60']
+        self.labels_list = ['[-1, -0.5]', '[-0.5, 0]', '[0, 0.1]', '[0.1, 0.2]', '[0.2, 0.3]', '[0.3, 0.4]', '[0.4, 0.5]', '[0.5, 1]']
         self.labels_dict = {}
         for i,rel in enumerate(self.labels_list):
             self.labels_dict[rel] = i
@@ -47,7 +53,7 @@ class Predict_length(object):
             trainable = False)
 
         self.logits = tf.contrib.layers.fully_connected(
-            self.X, 6, activation_fn=None, scope='output_layer')
+            self.X, 8, activation_fn=None, scope='output_layer')
         self.prediction = tf.argmax(self.logits, 1)
 
         self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -75,12 +81,10 @@ class Predict_length(object):
         Goldberg et al use bins
         (5-8), (9-12), (13-16), (17-20), (21-25), (26-29), (30-33), (34-70)
         '''
-        _, lengths = data 
-        bins = np.array([0, 5, 7,9 , 11, 13, 70])
-        labels = np.digitize(lengths, bins) - np.ones_like(lengths)
-        # print(labels)
-        # print(self.labels_dict)
-        # print(self.labels_list)
+        sentiments = [vad.polarity_scores(i)['compound'] for i in sentences]
+        bins = np.array([-1.0, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 1])
+        labels = np.digitize(sentiments, bins) - np.ones_like(sentiments)
+
         return labels
 
     def get_accuracy(self, data, labels, prediction):
@@ -96,9 +100,10 @@ class Predict_length(object):
             y_pred = prediction,
             labels = [self.labels_dict[i] for i in self.labels_list])
 
-        counts = np.zeros([6, 1])
+        counts = np.zeros([8, 1])
         for i in labels:
-            counts[i] += 1
+            counts[int(i)] += 1
+            # counts[self.labels_list.index(i)] += 1
 
         return np.expand_dims(pre,1), np.expand_dims(rec,1), np.expand_dims(f1,1), counts
 
@@ -274,7 +279,7 @@ def balance_data(data):
     lengths = [len(s.split(' ')) for s in data]
     data = data[np.array(lengths)<=70]
     lengths = [len(s.split(' ')) for s in data]
-    bins = np.array([0, 5, 8, 12, 17, 21, 26, 70])
+    bins = np.array([-1.0, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 1])
     share_dev = 0.05
     labels = np.digitize(lengths, bins) - np.ones_like(lengths)
     sss = StratifiedShuffleSplit(n_splits=2, test_size=0.05, random_state=0)

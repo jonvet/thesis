@@ -82,24 +82,19 @@ def _expand_vocabulary(skip_thoughts_emb, skip_thoughts_vocab, word2vec):
         expanded_vocab[w] = i
         expanded_embeddings[i,:] = embedding_map[w]
 
-    print('Saving expanded vocab and embeddings')
-    with open(path + 'expanded_vocab.pkl', 'wb') as f:
-        pkl.dump(expanded_vocab, f)
-
-    embeddings_file = os.path.join(path, "expanded_embeddings.npy")
-    np.save(embeddings_file, expanded_embeddings)
-
     return expanded_vocab, expanded_embeddings
 
 # path = '../models/toronto_n5/'
-path = '/cluster/project2/mr/vetterle/skipthought/toronto_n13/'
+path = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
+# path = '/cluster/project2/mr/vetterle/skipthought/toronto_n13/'
 
 print('Loading trained skipthought word embeddings')
 with open(path + 'paras.pkl', 'rb') as f:
     paras = pkl.load(f)
 skipthought_embeddings = load_skip_thoughts_embeddings(
     path = path, 
-    step = 425000)
+    step = 488268)
+# skipthought_embeddings = np.load('/cluster/project2/mr/vetterle/skipthought/toronto_n5/forgetful_embeddings.npy')
 with open(path + 'vocab.pkl', 'rb') as f:
     skipthought_vocab = pkl.load(f)
 
@@ -118,7 +113,10 @@ expanded_vocab, expanded_embeddings = _expand_vocabulary(
     skipthought_embeddings, 
     skipthought_vocab,
     word2vec)
-# else: 
-#     print('Expanded vocab and embeddings already exist in %s' % path)
 
-# encas = model.encoded_sentences.eval(session = model.sess, feed_dict={model.graph.get_tensor_by_name('embedding_lookup:0'): test, model.sentences_lengths: test_lengths})
+# np.save(os.path.join(path, 'forgetful_expanded_embeddings.npy'), expanded_embeddings)
+# with open(os.path.join(path, 'forgetful_expanded_vocab.pkl'), 'wb') as f:
+#     pkl.dump(expanded_vocab, f)
+np.save(os.path.join(path, 'expanded_embeddings.npy'), expanded_embeddings)
+with open(os.path.join(path, 'expanded_vocab.pkl'), 'wb') as f:
+    pkl.dump(expanded_vocab, f)

@@ -1,12 +1,13 @@
-from skipthought.skipthought import Skipthought_para
-from skipthought.skipthought import Skipthought_model
-from skipthought import util
 import tensorflow as tf
 import pickle as pkl
-from itertools import compress
 import numpy as np
-from infersent.data import get_nli
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from skipthought.skipthought import Skipthought_model
+from infersent.data import get_nli
+
 
 class ForgetThought_model(Skipthought_model):
 
@@ -14,7 +15,6 @@ class ForgetThought_model(Skipthought_model):
         super().__init__(vocab, parameters, path)
         
     def create_ft(self, path, num_classes, step):
-        # encoder_vars = [n for n in a if ('precoder' not in n.name) and ('postcoder' not in n.name)]
 
         self.num_classes = num_classes
         self.load_model(path, step)
@@ -47,15 +47,37 @@ class ForgetThought_model(Skipthought_model):
         self.merged2 = tf.summary.merge([forget_loss_sum])
 
 
-    def load_ft(self):
-        return
+    def load_ft(self, path):
+        with open(os.path.join(path, 'encoder_forget.pkl'), 'rb') as f:
+            np_paras = pkl.load(f)
+        # encoder_vars = [t.name.split(':')[0] for t in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder')]
+        encoder_vars = [t.name.split(':')[0].split('encoder/')[1] for t in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder')]
+        ops = []
+
+        # with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+        with tf.variable_scope('encoder', reuse=True):
+            for a, b in zip(encoder_vars, np_paras):
+                ops.append(tf.get_variable(a).assign(b))
+        self.sess.run(ops)
+
+# with open(os.path.join(SAVE_PATH, 'encoder_forget.pkl'), 'rb') as f:
+#     np_paras = pkl.load(f)
+# # encoder_vars = [t.name.split(':')[0] for t in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder')]
+# encoder_vars = [t.name.split(':')[0].split('encoder/')[1] for t in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder')]
+# ops = []
+
+# # with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+# with tf.variable_scope('encoder', reuse=True):
+#     for a, b in zip(encoder_vars, np_paras):
+#         # ops.append(tf.get_variable(a).assign(b))
+# a = task.sess.run(ops)
+# np.sum([np.sum(t) for t in a])
 
     def save_ft(self, path):
 
         out = self.sess.run(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder'))
         with open(os.path.join(path, 'encoder_forget.pkl'), 'wb') as f:
             pkl.dump(out, f)
-        return
 
     def load_output_layer(self, path):
 
@@ -124,7 +146,7 @@ class ForgetThought_model(Skipthought_model):
                 avg_loss += batch_loss/steps
                 print('\rBatch loss at step %d: %0.5f' % (step / model.para.batch_size, batch_loss), end = '    ')
                 self.train_loss_writer.add_summary(batch_summary, current_step)
-                self.save_ft(path)
+            self.save_ft(path)
             # _,_,f1 = self.test_model(X_dev, y_dev)
 
             # if f1>best_f1:
@@ -142,18 +164,14 @@ class ForgetThought_model(Skipthought_model):
 cluster = False
 
 if cluster:
-    # MODEL_PATH = '/cluster/project2/mr/vetterle/infersent/m6/'
     MODEL_PATH = '/cluster/project2/mr/vetterle/skipthought/toronto_n5/'
-
     INFERSENT_PATH = '/home/vetterle/InferSent/code/'
     SICK_PATH = '/home/vetterle/skipthought/eval/SICK/'
     SNLI_PATH = '/home/vetterle/InferSent/dataset/SNLI/'
     TORONTO_PATH = '/cluster/project6/mr_corpora/vetterle/toronto/'
 
 else:
-    # MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/models/m6/'
     MODEL_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/models/toronto_n5/'
-
     INFERSENT_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/code/'
     SICK_PATH = '/Users/Jonas/Documents/Repositories/thesis/skipthought/eval/SICK/'
     SNLI_PATH = '/Users/Jonas/Documents/Repositories/thesis/infersent/dataset/SNLI/'
@@ -176,9 +194,10 @@ tf.reset_default_graph()
 model = ForgetThought_model(vocab = vocab, parameters = paras, path = MODEL_PATH)
 model.create_ft(path = MODEL_PATH, num_classes = 6, step = step)
 model.load_output_layer(path = SAVE_PATH)
-model.para.batch_size = 64
+model.load_ft(path = SAVE_PATH)
+model.para.batch_size = 128
 model.para.learning_rate = 0.0001
-model.forget(epochs = 10, path = SAVE_PATH, snli_path = SNLI_PATH)
+# model.forget(epochs = 10, path = SAVE_PATH, snli_path = SNLI_PATH)
 
 
 

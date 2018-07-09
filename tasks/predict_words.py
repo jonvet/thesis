@@ -2,12 +2,10 @@ import tensorflow as tf
 import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
-from sklearn.metrics import roc_auc_score
 import os
 from infersent.data import get_nli
 import pickle as pkl
 import random
-from collections import defaultdict
 import pandas as pd
 
 class Predict_words(object):
@@ -56,7 +54,7 @@ class Predict_words(object):
         self.features = tf.concat([self.X, self.words], axis = 1)
 
         self.logits = tf.contrib.layers.fully_connected(
-            self.features, 1, activation_fn=None)
+            self.features, 1, activation_fn=None, scope='output_layer')
 
         self.prediction = tf.cast(tf.round(tf.sigmoid(self.logits)), tf.int32)
 
@@ -160,9 +158,41 @@ class Predict_words(object):
 
         if not os.path.exists(path):
             os.makedirs(path)
-        saver = tf.train.Saver()
-        saver.save(sess = self.sess, save_path = path + '/step_%d' % step, write_state = False)
+        saver = tf.train.Saver(var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='output_layer'))
+        saver.save(sess = self.sess, save_path = path + '/step_%d' % step)
 
+    # def save_model(self, path, step):
+
+    #     if not os.path.exists(path):
+    #         os.makedirs(path)
+    #     saver = tf.train.Saver()
+    #     saver.save(sess = self.sess, save_path = path + '/step_%d' % step, write_state = False)
+
+    def load_output_layer(self, path):
+
+        self.sess = tf.Session(graph = self.graph)
+        tf.global_variables_initializer().run(session = self.sess)
+
+        with open(os.path.join(path, 'output_layer.pkl'), 'rb') as f:
+            np_w, np_b = pkl.load(f)[0]
+        with tf.variable_scope("output_layer", reuse=True):
+            tf_w = tf.get_variable('weights')
+            tf_b = tf.get_variable('biases')
+        w_op = tf_w.assign(np_w)
+        b_op = tf_b.assign(np_b)
+        self.sess.run([w_op, b_op])
+
+    def load_ft(self, path):
+        with open(os.path.join(path, 'encoder_forget.pkl'), 'rb') as f:
+            np_paras = pkl.load(f)
+        encoder_vars = [t.name.split(':')[0] for t in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='encoder')]
+        ops = []
+
+        with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+            for a, b in zip(encoder_vars, np_paras):
+                ops.append(tf.get_variable(a).assign(b))
+        self.encoder.model.sess.run(ops)
+        
     def load_model(self, path, step):
 
         saver = tf.train.Saver()
